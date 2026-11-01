@@ -14,6 +14,14 @@ require_once 'vendor/autoload.php';
 require_once 'panels.php';
 $textbotlang = languagechange();
 $text = restoreCustomEmojiLabel($text);
+// Render Landing Page for web visitors (GET requests)
+if ($_SERVER['REQUEST_METHOD'] === 'GET' || empty(file_get_contents('php://input'))) {
+    if (file_exists(__DIR__ . '/landing.php')) {
+        require_once __DIR__ . '/landing.php';
+        exit;
+    }
+}
+
 #-----------telegram_ip_ranges------------#
 if (!checktelegramip())
     die("Unauthorized access");

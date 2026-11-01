@@ -1,44 +1,27 @@
-# Environments and secrets
-.env
-*.env.local
+# Composer-managed dependencies — installed by install.sh at install/update time.
+# Never commit these; run `composer install` to recreate them.
+/vendor/
 
-# Python
+# Composer runtime artifacts
+composer.phar
+
+# Runtime / generated files
+error_log
+cronbot/.run.lock
+/storage/**
+!/storage/cache/
+!/storage/.htaccess
+!/storage/cache/.htaccess
+/api/hash.txt
+*.xlsx
+graphify-out
+docs
+/lang/override/
+/deploy.sh
+
+# Python artifacts
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-ENV/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Database & logs
 *.db
 *.sqlite3
-douman_bot.db
-error_log
-*.log
-storage/cache/*
-storage/cron_status.json
-php_engine/storage/cron_status.json
-php_engine/storage/cache/*
-php_engine/config.php
-
-# OS files
-.DS_Store
-Thumbs.db
+.env

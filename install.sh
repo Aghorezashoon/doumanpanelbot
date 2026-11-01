@@ -301,7 +301,15 @@ _link_mirza() {
 function self_update_script() {
     local MASTER_PATH="/root/install.sh"
     local BIN_LINK="/usr/local/bin/mirza"
-    local URL="https://raw.githubusercontent.com/mahdiMGF2/mirzabot/main/install.sh"
+    local SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+    if [ -f "$SCRIPT_DIR/index.php" ] && [ -f "$SCRIPT_DIR/botapi.php" ]; then
+        echo -e "\e[32m[DoumanPanel] Running from local source directory: $SCRIPT_DIR\033[0m"
+        install -m 0755 "${BASH_SOURCE[0]}" "$MASTER_PATH" 2>/dev/null || true
+        _link_mirza "$MASTER_PATH" "$BIN_LINK"
+        _link_mirza "$MASTER_PATH" "/usr/local/bin/douman"
+        return 0
+    fi
+    local URL="https://raw.githubusercontent.com/Aghorezashoon/doumanpanelbot/main/install.sh"
     local TEMP_FILE="/tmp/mirzabot_update.sh"
 
     # Make sure DNS works before reaching GitHub
@@ -367,7 +375,7 @@ self_update_script "$@"
 # ── Repo / paths ─────────────────────────────────────────────
 BOT_DIR_DEFAULT="/var/www/html/mirzaprobotconfig"
 CONFIG_FILE_DEFAULT="$BOT_DIR_DEFAULT/config.php"
-GIT_REPO="mahdiMGF2/mirzabot"
+GIT_REPO="Aghorezashoon/doumanpanelbot"
 LATEST_CACHE="/tmp/.mirza_latest_version"
 IP_CACHE="/tmp/.mirza_server_ip"
 
@@ -510,8 +518,8 @@ setup_php_repo() {
 }
 export -f setup_php_repo
 
-export PHP_TARGET_VER="8.5"
-export PHP_MIN_VERSION="8.5.12"
+export PHP_TARGET_VER="8.3"
+export PHP_MIN_VERSION="8.1.0"
 
 # 0 when apt has an installable candidate for this package.
 _apt_has_candidate() {
@@ -2162,9 +2170,14 @@ function install_bot() {
             install_pause "Creating bot directory"
         fi
 
-        TEMP_DIR="/tmp/mirzaprobot"
-        rm -rf "$TEMP_DIR"; mkdir -p "$TEMP_DIR"
-        run_step "Downloading Mirza (${SRC_LABEL_RESUME})" "wget -O '$TEMP_DIR/bot.zip' '$ZIP_URL'" \
+        local LOCAL_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+        if [ -f "$LOCAL_SRC/index.php" ] && [ -f "$LOCAL_SRC/botapi.php" ]; then
+            run_step "Deploying Douman Bot from local source files" "cp -a '$LOCAL_SRC/'* '$BOT_DIR/' && rm -f '$BOT_DIR/install.sh'" \
+                || { show_step_error; install_pause "Deploying local files"; }
+        else
+            TEMP_DIR="/tmp/mirzaprobot"
+            rm -rf "$TEMP_DIR"; mkdir -p "$TEMP_DIR"
+            run_step "Downloading Mirza (${SRC_LABEL_RESUME})" "wget -O '$TEMP_DIR/bot.zip' '$ZIP_URL'" \
             || { show_step_error; install_pause "Downloading bot files"; }
         run_step "Extracting source files" "unzip -o '$TEMP_DIR/bot.zip' -d '$TEMP_DIR'" \
             || { show_step_error; install_pause "Extracting bot files"; }
@@ -2179,8 +2192,9 @@ function install_bot() {
             echo -e "\e[91mError: Failed to move extracted files.\033[0m"
             install_pause "Moving bot files"
         }
-        purge_installer_dir "$BOT_DIR"
-        rm -rf "$TEMP_DIR"
+            purge_installer_dir "$BOT_DIR"
+            rm -rf "$TEMP_DIR"
+        fi
         sudo chown -R www-data:www-data "$BOT_DIR"
         sudo chmod -R 755 "$BOT_DIR"
         wait
