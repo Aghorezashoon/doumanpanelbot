@@ -622,23 +622,62 @@ function generateUUID()
 
     return $uuid;
 }
-function rate_arze()
+function rate_arze($filter = null)
 {
-    $ch = curl_init('https://demo.mirzabot.com/b.php');
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
-    $response = curl_exec($ch);
-    if ($response === false) {
-        error_log('rate_arze failed: ' . curl_error($ch));
-        return null;
+    $cacheFile = sys_get_temp_dir() . '/douman_rates_cache.json';
+    $rates = null;
+
+    if (file_exists($cacheFile) && (time() - filemtime($cacheFile) < 300)) {
+        $rates = json_decode(@file_get_contents($cacheFile), true);
     }
-    $decoded = json_decode($response, true);
-    if (!is_array($decoded) || !isset($decoded['result']) || !is_array($decoded['result'])) {
-        error_log('rate_arze: unexpected response');
-        return null;
+
+    if (!is_array($rates) || empty($rates['USD'])) {
+        $ch = curl_init('https://api.nobitex.ir/market/stats?srcCurrency=usdt,trx,ton&dstCurrency=rls');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 4);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'DoumanBot/2.0');
+        $response = curl_exec($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($code === 200 && $response) {
+            $data = json_decode($response, true);
+            if (isset($data['status']) && $data['status'] === 'ok' && isset($data['stats'])) {
+                $usdtRials = floatval($data['stats']['usdt-rls']['latest'] ?? 0);
+                $trxRials = floatval($data['stats']['trx-rls']['latest'] ?? 0);
+                $tonRials = floatval($data['stats']['ton-rls']['latest'] ?? 0);
+                if ($usdtRials > 0) {
+                    $rates = [
+                        'USD' => round($usdtRials / 10),
+                        'TRX' => round($trxRials / 10),
+                        'Ton' => round($tonRials / 10),
+                    ];
+                    @file_put_contents($cacheFile, json_encode($rates));
+                }
+            }
+        }
     }
-    return $decoded['result'];
+
+    if (!is_array($rates) || empty($rates['USD'])) {
+        $rates = [
+            'USD' => 95000,
+            'TRX' => 26000,
+            'Ton' => 450000
+        ];
+    }
+
+    if (is_array($filter)) {
+        $filtered = [];
+        foreach ($filter as $key) {
+            if (isset($rates[$key])) {
+                $filtered[$key] = $rates[$key];
+            }
+        }
+        return $filtered;
+    }
+
+    return $rates;
 }
 function updatePaymentMessageId($response, $orderId)
 {
@@ -1896,7 +1935,7 @@ function addCronIfNotExists($cronCommand)
         return false;
     }
 
-    $applyMarker = 'MIRZA_CRON_OK';
+    $applyMarker = 'DOUMAN_CRON_OK';
     $applyOutput = runShellCommand(sprintf(
         '%s %s >/dev/null 2>&1 && echo %s',
         escapeshellarg($crontabBinary),
@@ -1942,7 +1981,7 @@ function activecron()
     removeCron("https://$domainhosts/cronbot/");
     removeCron(__DIR__ . '/cronbot/');
 
-    addCronIfNotExists(mirza_cron_dispatcher_command($domainhosts));
+    addCronIfNotExists(douman_cron_dispatcher_command($domainhosts));
 }
 function createInvoice($amount)
 {
@@ -2398,7 +2437,7 @@ function createqrcode($contents)
 }
 function qrTempPath($filename)
 {
-    $dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'mirzabot_qr';
+    $dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'doumanpanelbot_qr';
     if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
         $dir = sys_get_temp_dir();
     }
@@ -2639,7 +2678,7 @@ function createPayVariza($price, $order_id)
         CURLOPT_POSTFIELDS => json_encode([
             'amount' => (int) $price,
             'return_url' => 'https://' . $domainhosts . '/payment/variza.php?order=' . $order_id,
-            'title' => 'Mirza order ' . $order_id,
+            'title' => 'Douman order ' . $order_id,
             'expires_in' => '1h',
         ], JSON_UNESCAPED_UNICODE),
     ]);
@@ -2722,7 +2761,7 @@ function parseConfigs($input)
     return $configs;
 }
 
-function mirzaRemoveInstallerPath($path)
+function doumanRemoveInstallerPath($path)
 {
     if (is_link($path) || is_file($path)) {
         return @unlink($path);
@@ -2741,13 +2780,13 @@ function mirzaRemoveInstallerPath($path)
         if ($entry === '.' || $entry === '..') {
             continue;
         }
-        $removed = mirzaRemoveInstallerPath($path . '/' . $entry) && $removed;
+        $removed = doumanRemoveInstallerPath($path . '/' . $entry) && $removed;
     }
 
     return @rmdir($path) && $removed;
 }
 
-function mirzaInstallerNoticeTexts()
+function doumanInstallerNoticeTexts()
 {
     global $textbotlang;
     $lang = is_array($textbotlang) && !empty($textbotlang) ? $textbotlang : null;
@@ -2761,7 +2800,7 @@ function mirzaInstallerNoticeTexts()
     ];
 }
 
-function mirzaShouldAlertInstallerAdmin($cooldown = 3600)
+function doumanShouldAlertInstallerAdmin($cooldown = 3600)
 {
     $cacheDir = __DIR__ . '/storage/cache';
     if (!is_dir($cacheDir) && !@mkdir($cacheDir, 0775, true) && !is_dir($cacheDir)) {
@@ -2776,28 +2815,28 @@ function mirzaShouldAlertInstallerAdmin($cooldown = 3600)
     return true;
 }
 
-function mirzaNotifyInstallerBlocked()
+function doumanNotifyInstallerBlocked()
 {
     global $from_id, $adminnumber;
     if (!function_exists('sendmessage')) {
         return;
     }
-    $texts = mirzaInstallerNoticeTexts();
+    $texts = doumanInstallerNoticeTexts();
     $adminId = isset($adminnumber) ? trim((string) $adminnumber) : '';
     $userId = isset($from_id) ? trim((string) $from_id) : '';
     $userIsAdmin = $adminId !== '' && $userId === $adminId;
     if ($userId !== '' && !isTelegramChatIdEmpty($userId)) {
         sendmessage($userId, $userIsAdmin ? $texts['admin'] : $texts['user'], null, 'HTML');
     }
-    if (!$userIsAdmin && $adminId !== '' && mirzaShouldAlertInstallerAdmin()) {
+    if (!$userIsAdmin && $adminId !== '' && doumanShouldAlertInstallerAdmin()) {
         sendmessage($adminId, $texts['admin'], null, 'HTML');
     }
 }
 
-function mirzaStopForInstaller($message)
+function doumanStopForInstaller($message)
 {
     error_log($message);
-    mirzaNotifyInstallerBlocked();
+    doumanNotifyInstallerBlocked();
     if (!headers_sent()) {
         http_response_code(200);
         header('Content-Type: text/plain; charset=utf-8');
@@ -2807,14 +2846,25 @@ function mirzaStopForInstaller($message)
     exit;
 }
 
-function mirzaEnsureInstallerRemoved()
+function doumanEnsureInstallerRemoved()
 {
     $installerDirectory = __DIR__ . '/install';
     if (!is_dir($installerDirectory)) {
         return;
     }
 
-    if (!mirzaRemoveInstallerPath($installerDirectory)) {
-        mirzaStopForInstaller('Mirza install folder still exists and could not be removed automatically; delete it manually to enable the bot.');
+    if (!doumanRemoveInstallerPath($installerDirectory)) {
+        doumanStopForInstaller('Douman install folder still exists and could not be removed automatically; delete it manually to enable the bot.');
     }
+}
+
+
+// Backward compatibility aliases for installer
+if (!function_exists('mirzaEnsureInstallerRemoved')) {
+    function mirzaEnsureInstallerRemoved() { return doumanEnsureInstallerRemoved(); }
+    function mirzaStopForInstaller($msg) { return doumanStopForInstaller($msg); }
+    function mirzaNotifyInstallerBlocked() { return doumanNotifyInstallerBlocked(); }
+    function mirzaShouldAlertInstallerAdmin($c = 3600) { return doumanShouldAlertInstallerAdmin($c); }
+    function mirzaInstallerNoticeTexts() { return doumanInstallerNoticeTexts(); }
+    function mirzaRemoveInstallerPath($p) { return doumanRemoveInstallerPath($p); }
 }

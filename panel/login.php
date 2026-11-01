@@ -74,16 +74,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <div class="auth">
     <aside class="auth-aside">
       <div class="auth-mark">
-        <div class="dot">M</div>
+        <div class="dot">D</div>
         <span><?= $textbotlang['panel']['loginHeading'] ?></span>
       </div>
       <div class="auth-quote">
-        <h2><?= $textbotlang['panel']['loginSubtitle'] ?> <a style="color:#a8dafd !important  "
-            href="https://github.com/mahdiMGF2/mirzabot"><?= $textbotlang['panel']['loginUsernameLabel'] ?></a>
-          <?= $textbotlang['panel']['loginUsernamePlaceholder'] ?></h2>
-        <cite><?= $textbotlang['panel']['loginPasswordLabel'] ?></cite>
-      </div>
-      <div class="auth-foot">© <?= date('Y') ?> <?= $textbotlang['panel']['loginPasswordPlaceholder'] ?></div>
+        <h2>سیستم جامع مدیریت فروش و کانفیگ <a style="color:#38bdf8 !important; text-decoration: underline;" href="https://github.com/Aghorezashoon/doumanpanelbot" target="_blank">Douman Panel Pro</a></h2>
+        <cite>نسخه حرفه‌ای · پرسرعت، امن و مستقل</cite>
+      <div class="auth-foot">© <?= date('Y') ?> Douman Panel Bot Pro · تمامی حقوق محفوظ است</div>
     </aside>
     <main class="auth-main">
       <div class="auth-box" style="animation:fadeUp .5s ease-out">

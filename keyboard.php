@@ -558,7 +558,7 @@ function cronStatusMenu()
     $timeAgo = fn($time) => time() - $time < 60 ? $labels['justNow'] : sprintf($labels['minutesAgo'], intdiv(time() - $time, 60));
     $dispatcherRunning = isset($cronStatus['dispatcher']) && time() - $cronStatus['dispatcher'] <= 180;
     $lines = [];
-    foreach (mirza_cron_jobs() as $job) {
+    foreach (douman_cron_jobs() as $job) {
         [$minute, $hour] = explode(' ', $job['schedule']);
         $intervalMinutes = str_starts_with($hour, '*/') ? (int) substr($hour, 2) * 60 : (str_starts_with($minute, '*/') ? (int) substr($minute, 2) : 1);
         $lastRun = $cronStatus['jobs'][$job['job']] ?? null;
@@ -581,7 +581,7 @@ function cronStatusMenu()
     }
     $text .= implode("\n", $lines);
     if (!$dispatcherRunning) {
-        $text .= "\n\n" . sprintf($labels['command'], htmlspecialchars(mirza_cron_dispatcher_command((string) $domainhosts)));
+        $text .= "\n\n" . sprintf($labels['command'], htmlspecialchars(douman_cron_dispatcher_command((string) $domainhosts)));
     }
     $keyboard = json_encode([
         'inline_keyboard' => [
@@ -1073,7 +1073,8 @@ $panelOptionRows = [
     'WGDashboard' => [['manualCreateConfig'], ['panelName', 'deletePanel'], ['editPassword'], ['editPanelUrl', 'setInboundId'], ['renewalMethod', 'usernameMethod'], ['accountCreateLimit', 'changeUserGroup'], $panelTestRow, ...$panelPriceRows, ['changeLocationPrice'], ...$panelLimitRows, ['inboundDeactivate']],
     'rebecca' => [['panelName', 'deletePanel'], ['editPassword'], ['editPanelUrl', 'setProtocolInbound'], ['renewalMethod', 'usernameMethod'], ['accountCreateLimit', 'changeUserGroup'], $panelTestRow, ...$panelPriceRows, ['changeLocationPrice'], ...$panelLimitRows, ['inboundDeactivate']],
     'ibsng' => [['panelName', 'deletePanel'], ['editPassword', 'editUsername'], ['editPanelUrl', 'setGroupName'], ['renewalMethod', 'usernameMethod'], ['accountCreateLimit', 'changeUserGroup'], ...$panelPriceRows, ...$panelLimitRows],
-    'mirza_agent' => [['panelName', 'deletePanel'], ['editPassword'], ['editPanelUrl', 'panelSetting'], ['accountCreateLimit', 'changeUserGroup'], ...$panelPriceRows, ...$panelLimitRows],
+    'douman_agent' => [['panelName', 'deletePanel'], ['editPassword'], ['editPanelUrl', 'panelSetting']],
+        'mirza_agent' => [['panelName', 'deletePanel'], ['editPassword'], ['editPanelUrl', 'panelSetting'], ['accountCreateLimit', 'changeUserGroup'], ...$panelPriceRows, ...$panelLimitRows],
     'Manualsale' => [['panelName', 'deletePanel'], ['usernameMethod'], ['accountCreateLimit', 'changeUserGroup'], ['addConfig', 'deleteConfig'], ['editConfig']],
 ];
 $panelOptionRows['mikrotik'] = $panelOptionRows['ibsng'];
@@ -1159,7 +1160,7 @@ $keyboardtypepanel = json_encode([
         ],
         [
             ['text' => $textbotlang['keyboard']['passargadPanel'], 'callback_data' => "typepanel#pasarguard"],
-            ['text' => $textbotlang['keyboard']['mirzaAgentPanel'], 'callback_data' => "typepanel#mirza_agent"]
+            ['text' => $textbotlang['keyboard']['doumanAgentPanel'] ?? $textbotlang['keyboard']['mirzaAgentPanel'], 'callback_data' => "typepanel#douman_agent"]
         ],
         [
             ['text' => $textbotlang['keyboard']['panelTypeSanaei'], 'callback_data' => 'typepanel#x-ui_single'],

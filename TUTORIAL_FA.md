@@ -47,9 +47,9 @@ git clone https://github.com/Aghorezashoon/doumanpanelbot.git && cd doumanpanelb
 
 منوی زیر ظاهر می‌شود:
 ```
-1) Install Mirza
-2) Update Mirza
-3) Remove Mirza
+1) Install Douman
+2) Update Douman
+3) Remove Douman
 4) Migrate: Free -> Pro
 5) Renew SSL certificate
 6) Help & Parameters
@@ -126,7 +126,7 @@ git clone https://github.com/Aghorezashoon/doumanpanelbot.git && cd doumanpanelb
 
 ## ۶. مدیریت و سفارشی‌سازی وب‌سایت لندینگ
 
-فایل [`landing.php`](file:///c:/Users/Reza%20BadalXani/Documents/Mirza%20bot/landing.php) به شکلی کدنویسی شده که پلن‌های قیمتی را مستقیماً از دیتابیس ربات (جدول `product`) واکشی می‌کند.
+فایل `landing.php` به شکلی کدنویسی شده که پلن‌های قیمتی را مستقیماً از دیتابیس ربات (جدول `product`) واکشی می‌کند.
 
 - اگر در پنل ادمین محصول یا پلن جدیدی بسازید، کارت‌های تعرفه روی وب‌سایت نیز به صورت خودکار با قیمت جدید بروزرسانی می‌شوند.
 - دکمه‌های خرید روی وب‌سایت، کاربر را مستقیماً به ربات تلگرام با دستور استارت مخصوص آن پلن هدایت می‌کنند تا خرید در تلگرام نهایی شود.
@@ -138,7 +138,7 @@ git clone https://github.com/Aghorezashoon/doumanpanelbot.git && cd doumanpanelb
 
 ```bash
 # باز کردن منوی مدیریتی نصاب
-mirza
+douman
 
 # بررسی لاگ‌های آپاچی و ربات
 tail -f /var/log/apache2/error.log
@@ -147,5 +147,5 @@ tail -f /var/log/apache2/error.log
 systemctl restart apache2
 
 # اجرای دستی کران‌جاب‌ها
-php /var/www/html/mirzaprobotconfig/cronbot/run.php
+php /var/www/html/doumanpanelbot/cronbot/run.php
 ```

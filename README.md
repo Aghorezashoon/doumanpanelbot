@@ -65,9 +65,9 @@ git clone https://github.com/Aghorezashoon/doumanpanelbot.git && cd doumanpanelb
 
 پس از اجرای اسکریپت، منوی تعاملی زیر ظاهر می‌شود:
 ```
-1) Install Mirza
-2) Update Mirza
-3) Remove Mirza
+1) Install Douman
+2) Update Douman
+3) Remove Douman
 4) Migrate: Free -> Pro
 5) Renew SSL certificate
 6) Help & Parameters

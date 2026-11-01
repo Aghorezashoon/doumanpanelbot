@@ -3,3 +3,60 @@
 .range-tabs{display:flex;gap:4px;margin-bottom:14px;background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:5px;overflow-x:auto;width:fit-content;max-width:100%}.range-tabs a{padding:7px 14px;border-radius:7px;font-size:.8rem;font-weight:600;white-space:nowrap;color:var(--mute);text-decoration:none;transition:all .15s}.range-tabs a:hover{color:var(--text)}.range-tabs a.active{background:var(--ac);color:var(--btn-ac-text,#fff);box-shadow:0 0 14px var(--acg)}
 .chart-grid{transition:opacity .15s}.chart-grid.loading{opacity:.5;pointer-events:none}
 .btn-glass{position:relative;display:inline-flex;align-items:center;gap:7px;padding:7px 16px;border-radius:12px;font-size:.8rem;font-weight:700;color:var(--text);text-decoration:none;background:linear-gradient(135deg,color-mix(in srgb,var(--ac) 30%,transparent),color-mix(in srgb,var(--ac) 8%,transparent));border:1px solid color-mix(in srgb,var(--ac) 45%,transparent);box-shadow:0 6px 20px var(--acg),inset 0 1px 0 rgba(255,255,255,.28);backdrop-filter:blur(12px) saturate(160%);-webkit-backdrop-filter:blur(12px) saturate(160%);overflow:hidden;transition:transform .15s,box-shadow .15s}.btn-glass::before{content:"";position:absolute;inset:0 0 50% 0;background:linear-gradient(180deg,rgba(255,255,255,.22),rgba(255,255,255,0));pointer-events:none}.btn-glass svg{color:var(--no)}.btn-glass:hover{transform:translateY(-1px);box-shadow:0 8px 26px var(--acg),inset 0 1px 0 rgba(255,255,255,.35)}
+
+
+/* Douman Panel Pro - Modern SaaS UI Enhancements */
+.card {
+    background: color-mix(in srgb, var(--sf) 88%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid color-mix(in srgb, var(--bd) 80%, var(--ac) 20%);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.22);
+    transition: transform var(--tm), box-shadow var(--tm), border-color var(--tm);
+}
+.card:hover {
+    border-color: color-mix(in srgb, var(--bd) 55%, var(--ac) 45%);
+}
+.stat {
+    background: color-mix(in srgb, var(--sf) 90%, transparent);
+    backdrop-filter: blur(12px);
+    border: 1px solid color-mix(in srgb, var(--bd) 85%, var(--ac) 15%);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    transition: all var(--tm);
+}
+.stat:hover {
+    box-shadow: 0 12px 28px -6px rgba(0, 0, 0, 0.35), 0 0 18px var(--acg);
+    border-color: var(--ac);
+    transform: translateY(-3px);
+}
+.brand-mark {
+    background: linear-gradient(135deg, #0284c7, #38bdf8, #a855f7) !important;
+    background-size: 200% 200% !important;
+    animation: gradientShift 6s ease infinite !important;
+    box-shadow: 0 0 20px rgba(56, 189, 248, 0.45) !important;
+}
+@keyframes gradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+.topbar {
+    background: color-mix(in srgb, var(--sf) 88%, transparent);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid color-mix(in srgb, var(--bd) 80%, var(--ac) 20%);
+}
+.sidebar {
+    background: color-mix(in srgb, var(--sf) 94%, transparent);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+.btn-primary {
+    background: linear-gradient(135deg, var(--ac), var(--ach));
+    box-shadow: 0 4px 18px var(--acg);
+    font-weight: 700;
+}
+.tag {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    backdrop-filter: blur(6px);
+}

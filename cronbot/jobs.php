@@ -1,6 +1,6 @@
 <?php
 
-function mirza_cron_jobs(): array
+function douman_cron_jobs(): array
 {
     return [
         ['job' => 'croncard', 'schedule' => '*/1 * * * *', 'title' => 'تأیید خودکار رسید کارت به کارت'],
@@ -25,12 +25,12 @@ function mirza_cron_jobs(): array
     ];
 }
 
-function mirza_cron_dispatcher_path(): string
+function douman_cron_dispatcher_path(): string
 {
     return __DIR__ . '/run.php';
 }
 
-function mirza_cron_stagger_seconds(string $seed = ''): int
+function douman_cron_stagger_seconds(string $seed = ''): int
 {
     if ($seed === '') {
         $seed = dirname(__DIR__);
@@ -39,7 +39,7 @@ function mirza_cron_stagger_seconds(string $seed = ''): int
     return (int) (sprintf('%u', crc32($seed)) % 20);
 }
 
-function mirza_cron_php_binary(): string
+function douman_cron_php_binary(): string
 {
     $php = PHP_BINDIR . '/php';
     if (is_executable($php)) {
@@ -55,16 +55,26 @@ function mirza_cron_php_binary(): string
     return 'php';
 }
 
-function mirza_cron_dispatcher_command(string $seed = ''): string
+function douman_cron_dispatcher_command(string $seed = ''): string
 {
-    $sleep = mirza_cron_stagger_seconds($seed);
-    $php = mirza_cron_php_binary();
-    $path = mirza_cron_dispatcher_path();
+    $sleep = douman_cron_stagger_seconds($seed);
+    $php = douman_cron_php_binary();
+    $path = douman_cron_dispatcher_path();
 
     return '* * * * * sleep ' . $sleep . '; ' . $php . ' ' . $path . ' >/dev/null 2>&1';
 }
 
-function mirza_cron_dispatcher_curl_command(string $baseUrl): string
+function douman_cron_dispatcher_curl_command(string $baseUrl): string
 {
     return '* * * * * curl -s ' . rtrim($baseUrl, '/') . '/cronbot/run.php > /dev/null 2>&1';
+}
+
+// Aliases for backwards compatibility
+if (!function_exists('mirza_cron_jobs')) {
+    function mirza_cron_jobs(): array { return douman_cron_jobs(); }
+    function mirza_cron_dispatcher_path(): string { return douman_cron_dispatcher_path(); }
+    function mirza_cron_stagger_seconds(string $seed = ''): int { return douman_cron_stagger_seconds($seed); }
+    function mirza_cron_php_binary(): string { return douman_cron_php_binary(); }
+    function mirza_cron_dispatcher_command(string $seed = ''): string { return douman_cron_dispatcher_command($seed); }
+    function mirza_cron_dispatcher_curl_command(string $baseUrl): string { return douman_cron_dispatcher_curl_command($baseUrl); }
 }
