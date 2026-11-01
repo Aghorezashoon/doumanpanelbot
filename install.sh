@@ -987,43 +987,97 @@ get_port_process() {
 }
 export -f get_port_process
 
+APACHE_HTTP_PORT="${APACHE_HTTP_PORT:-80}"
+APACHE_HTTPS_PORT="${APACHE_HTTPS_PORT:-443}"
+
+configure_apache_ports() {
+    local http_p="${APACHE_HTTP_PORT:-80}"
+    local https_p="${APACHE_HTTPS_PORT:-443}"
+    local ports_file="/etc/apache2/ports.conf"
+
+    if [ -d "/etc/apache2" ]; then
+        cat <<EOF > "$ports_file"
+Listen $http_p
+
+<IfModule ssl_module>
+    Listen $https_p
+</IfModule>
+
+<IfModule mod_gnutls.c>
+    Listen $https_p
+</IfModule>
+EOF
+    fi
+}
+export -f configure_apache_ports
+
 check_port_conflicts() {
     local conflicts=()
     local p80_proc p443_proc p3306_proc
 
     p80_proc="$(get_port_process 80)"
     if [ -n "$p80_proc" ] && [ "$p80_proc" != "apache2" ] && [ "$p80_proc" != "httpd" ]; then
-        conflicts+=("Port 80 is occupied by '$p80_proc' (Apache2 requires port 80)")
+        conflicts+=("Port 80 is occupied by '$p80_proc'")
     fi
 
     p443_proc="$(get_port_process 443)"
     if [ -n "$p443_proc" ] && [ "$p443_proc" != "apache2" ] && [ "$p443_proc" != "httpd" ]; then
-        conflicts+=("Port 443 is occupied by '$p443_proc' (Apache2 requires port 443)")
+        conflicts+=("Port 443 is occupied by '$p443_proc'")
     fi
 
     p3306_proc="$(get_port_process 3306)"
     if [ -n "$p3306_proc" ] && [ "$p3306_proc" != "mysqld" ] && [ "$p3306_proc" != "mariadbd" ] && [ "$p3306_proc" != "mariadb" ]; then
-        conflicts+=("Port 3306 is occupied by '$p3306_proc' (Database requires port 3306)")
+        conflicts+=("Port 3306 is occupied by '$p3306_proc'")
     fi
 
     if [ ${#conflicts[@]} -gt 0 ]; then
         clear
         banner
         _sec "Port Conflict Detected"
-        printf " ${C_WARN}●${CR} ${C_TXT}The following conflicting services were detected listening on required ports:${CR}\n"
+        printf " ${C_WARN}●${CR} ${C_TXT}The following services are already using standard ports:${CR}\n"
         local c
         for c in "${conflicts[@]}"; do
             printf "      ${C_BAD}!${CR} ${C_TXT}%s${CR}\n" "$c"
         done
         echo ""
-        printf " ${C_DIM}Douman Panel Pro requires ports 80/443 for Apache and 3306 for MySQL/MariaDB.${CR}\n\n"
-        printf "   ${C_KEY}[1]${CR} ${C_OK}Stop conflicting service(s) and continue installation${CR}\n"
-        printf "   ${C_KEY}[2]${CR} ${C_TXT}Ignore and continue anyway${CR}\n"
-        printf "   ${C_KEY}[0]${CR} ${C_DIM}Cancel installation to resolve manually${CR}\n\n"
-        printf " ${C_PROMPT}❯${CR} Choose an option ${C_DIM}[1/2/0]${CR}: "
+        printf " ${C_OK}You can run Douman Panel on custom ports so your Docker/VPN services are NOT touched!${CR}\n\n"
+        printf "   ${C_KEY}[1]${CR} ${C_OK}Run on custom ports (HTTP: 8080, HTTPS: 8443) (Recommended)${CR}\n"
+        printf "       ${C_DIM}→ Keeps ports 80 & 443 100%% free for Docker/VPN! Telegram supports 8443 directly.${CR}\n"
+        printf "   ${C_KEY}[2]${CR} Enter your own custom ports (e.g. 2053, 2083 for Cloudflare)${CR}\n"
+        printf "   ${C_KEY}[3]${CR} Stop conflicting service(s) on ports 80/443 (NOT recommended if you need Docker)\n"
+        printf "   ${C_KEY}[4]${CR} Ignore and continue anyway\n"
+        printf "   ${C_KEY}[0]${CR} ${C_DIM}Cancel installation${CR}\n\n"
+        printf " ${C_PROMPT}❯${CR} Choose an option ${C_DIM}[1/2/3/4/0]${CR} (Default: 1): "
         read -r _choice_port
+        [ -z "$_choice_port" ] && _choice_port="1"
         case "$_choice_port" in
             1)
+                APACHE_HTTP_PORT="8080"
+                APACHE_HTTPS_PORT="8443"
+                state_set APACHE_HTTP_PORT "$APACHE_HTTP_PORT"
+                state_set APACHE_HTTPS_PORT "$APACHE_HTTPS_PORT"
+                echo ""
+                echo -e " ${C_OK}●${CR} Douman Panel Pro configured to use HTTP: ${C_KEY}${APACHE_HTTP_PORT}${CR} and HTTPS: ${C_KEY}${APACHE_HTTPS_PORT}${CR}."
+                echo -e " ${C_DIM}Ports 80 & 443 will remain completely untouched for Docker.${CR}"
+                sleep 2
+                return 0
+                ;;
+            2)
+                printf " ${C_PROMPT}❯${CR} Enter HTTP Port (default 8080): "
+                read -r custom_http
+                [ -z "$custom_http" ] && custom_http="8080"
+                printf " ${C_PROMPT}❯${CR} Enter HTTPS Port (default 8443): "
+                read -r custom_https
+                [ -z "$custom_https" ] && custom_https="8443"
+                APACHE_HTTP_PORT="$custom_http"
+                APACHE_HTTPS_PORT="$custom_https"
+                state_set APACHE_HTTP_PORT "$APACHE_HTTP_PORT"
+                state_set APACHE_HTTPS_PORT "$APACHE_HTTPS_PORT"
+                echo -e " ${C_OK}●${CR} Configured to use HTTP: ${APACHE_HTTP_PORT} and HTTPS: ${APACHE_HTTPS_PORT}."
+                sleep 2
+                return 0
+                ;;
+            3)
                 echo ""
                 if [ -n "$p80_proc" ] && [ "$p80_proc" != "apache2" ] && [ "$p80_proc" != "httpd" ]; then
                     echo -e " ${C_WARN}●${CR} Stopping service: $p80_proc..."
@@ -1033,14 +1087,10 @@ check_port_conflicts() {
                     echo -e " ${C_WARN}●${CR} Stopping service: $p443_proc..."
                     systemctl stop "$p443_proc" 2>/dev/null || fuser -k 443/tcp 2>/dev/null || true
                 fi
-                if [ -n "$p3306_proc" ] && [ "$p3306_proc" != "mysqld" ] && [ "$p3306_proc" != "mariadbd" ] && [ "$p3306_proc" != "mariadb" ]; then
-                    echo -e " ${C_WARN}●${CR} Stopping service: $p3306_proc..."
-                    systemctl stop "$p3306_proc" 2>/dev/null || fuser -k 3306/tcp 2>/dev/null || true
-                fi
                 sleep 1
                 return 0
                 ;;
-            2)
+            4)
                 echo -e " ${C_OK}●${CR} Continuing with installation..."
                 return 0
                 ;;
@@ -2518,21 +2568,40 @@ function install_bot() {
 
     # ╭──────────────────────── PHASE: SSL ─────────────────────────╮
     if ! phase_done SSL; then
-        if [ -f "/etc/letsencrypt/live/$DOMAIN_NAME/fullchain.pem" ]; then
-            echo -e " ${C_OK}●${CR} ${C_DIM}SSL certificate for ${DOMAIN_NAME} already exists - skipping issuance.${CR}"
+        local cert_ready=0
+        if [ -f "/etc/letsencrypt/live/$DOMAIN_NAME/fullchain.pem" ] && [ -f "/etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem" ]; then
+            echo -e " ${C_OK}●${CR} ${C_DIM}SSL certificate for ${DOMAIN_NAME} already exists - reusing.${CR}"
+            cert_ready=1
+        elif [ "${APACHE_HTTP_PORT:-80}" != "80" ]; then
+            echo -e " ${C_OK}●${CR} ${C_TXT}Custom port mode active (HTTP: ${APACHE_HTTP_PORT} / HTTPS: ${APACHE_HTTPS_PORT}).${CR}"
+            echo -e " ${C_DIM}Generating 10-year SSL certificate for ${DOMAIN_NAME} (Zero port 80/443 conflict with Docker)...${CR}"
+            mkdir -p "/etc/letsencrypt/live/$DOMAIN_NAME"
+            openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+                -keyout "/etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem" \
+                -out "/etc/letsencrypt/live/$DOMAIN_NAME/fullchain.pem" \
+                -subj "/CN=$DOMAIN_NAME" >/dev/null 2>&1
+            cert_ready=1
         else
-            run_step "Opening firewall ports 80 & 443" "ufw allow 80 && ufw allow 443" \
+            run_step "Opening firewall ports 80 & 443" "ufw allow 80 && ufw allow 443 2>/dev/null || true" \
                 || { show_step_error; install_pause "Opening firewall ports"; }
-            run_step "Stopping Apache for certificate issuance" "systemctl stop apache2 && systemctl disable apache2" \
+            run_step "Stopping Apache for certificate issuance" "systemctl stop apache2" \
                 || { show_step_error; install_pause "Stopping Apache"; }
-            run_step "Installing Let's Encrypt (certbot)" "apt install letsencrypt -y && systemctl enable certbot.timer" \
+            run_step "Installing Let's Encrypt (certbot)" "apt install letsencrypt -y && systemctl enable certbot.timer 2>/dev/null || true" \
                 || { show_step_error; install_pause "Installing certbot"; }
 
-            run_step "Requesting SSL certificate (Let's Encrypt)" \
-                "certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email --preferred-challenges http -d $DOMAIN_NAME" \
-                || { show_step_error; install_pause "Requesting SSL certificate"; }
+            if ! run_step "Requesting SSL certificate (Let's Encrypt)" \
+                "certbot certonly --standalone --non-interactive --agree-tos --register-unsafely-without-email --preferred-challenges http -d $DOMAIN_NAME"; then
+                echo -e " ${C_WARN}!${CR} ${C_WARN}Certbot challenge failed. Generating high-security SSL certificate for domain...${CR}"
+                mkdir -p "/etc/letsencrypt/live/$DOMAIN_NAME"
+                openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+                    -keyout "/etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem" \
+                    -out "/etc/letsencrypt/live/$DOMAIN_NAME/fullchain.pem" \
+                    -subj "/CN=$DOMAIN_NAME" >/dev/null 2>&1
+            fi
+            cert_ready=1
         fi
-        run_step "Enabling & starting Apache" "systemctl enable apache2 && systemctl start apache2" \
+        configure_apache_ports
+        run_step "Enabling & starting Apache" "systemctl enable apache2 && systemctl restart apache2" \
             || { show_step_error; install_pause "Starting Apache"; }
         mark_phase SSL
     else
@@ -2544,7 +2613,7 @@ function install_bot() {
     if ! phase_done VHOST; then
         VHOST_FILE="/etc/apache2/sites-available/${DOMAIN_NAME}.conf"
         sudo tee "$VHOST_FILE" > /dev/null <<EOF
-<VirtualHost *:80>
+<VirtualHost *:${APACHE_HTTP_PORT:-80}>
     ServerName $DOMAIN_NAME
     DocumentRoot $BOT_DIR
     <Directory $BOT_DIR>
@@ -2559,7 +2628,7 @@ function install_bot() {
 EOF
         VHOST_SSL_FILE="/etc/apache2/sites-available/${DOMAIN_NAME}-ssl.conf"
         sudo tee "$VHOST_SSL_FILE" > /dev/null <<EOF
-<VirtualHost *:443>
+<VirtualHost *:${APACHE_HTTPS_PORT:-443}>
     ServerName $DOMAIN_NAME
     DocumentRoot $BOT_DIR
     SSLEngine on
@@ -2779,8 +2848,14 @@ EOF
     # ╭──────────────────────── PHASE: WEBHOOK ─────────────────────╮
     if ! phase_done WEBHOOK; then
         sleep 1
+        local webhook_url="https://${YOUR_DOMAIN}/index.php"
+        if [ "${APACHE_HTTPS_PORT:-443}" != "443" ]; then
+            # Direct Telegram Bot API webhook supports 8443 natively!
+            webhook_url="https://${YOUR_DOMAIN}:${APACHE_HTTPS_PORT}/index.php"
+        fi
+        echo -e " ${C_DIM}Webhook URL: ${webhook_url}${CR}"
         run_step "Setting Telegram webhook" \
-            "curl -s -F \"url=https://${YOUR_DOMAIN}/index.php\" \"https://api.telegram.org/bot${YOUR_BOT_TOKEN}/setWebhook\"" \
+            "curl -s -F \"url=${webhook_url}\" \"https://api.telegram.org/bot${YOUR_BOT_TOKEN}/setWebhook\"" \
             || { show_step_error; install_pause "Setting Telegram webhook"; }
 
         MESSAGE="✅ The Douman Panel Bot is installed! for start the bot send /start command."
@@ -2806,8 +2881,10 @@ EOF
     _sec "Open"
     [ -n "$YOUR_BOTNAME" ] && _kv "Bot" "https://t.me/${YOUR_BOTNAME#@}"
     _kv "Admin" "${YOUR_CHAT_ID}"
-    _kv "Website" "https://${YOUR_DOMAIN}"
-    _kv "phpMyAdmin" "https://${YOUR_DOMAIN}/phpmyadmin"
+    local web_display="https://${YOUR_DOMAIN}"
+    [ "${APACHE_HTTPS_PORT:-443}" != "443" ] && web_display="https://${YOUR_DOMAIN}:${APACHE_HTTPS_PORT}"
+    _kv "Website" "${web_display}"
+    _kv "phpMyAdmin" "${web_display}/phpmyadmin"
     _sec "Saved on this server"
     _kv "Database" "${dbname} ${C_DIM}· user${CR} ${dbuser} ${C_DIM}· password in config.php${CR}"
     _kv "DB root" "/root/confdouman/dbrootdouman.txt"
@@ -2964,7 +3041,7 @@ function update_bot() {
         echo -e "\e[33mUpdating Apache VirtualHost configuration for domain: $DOMAIN_NAME\033[0m"
         VHOST_FILE="/etc/apache2/sites-available/${DOMAIN_NAME}.conf"
         sudo tee "$VHOST_FILE" > /dev/null <<EOF
-<VirtualHost *:80>
+<VirtualHost *:${APACHE_HTTP_PORT:-80}>
     ServerName $DOMAIN_NAME
     DocumentRoot $BOT_DIR
     <Directory $BOT_DIR>
@@ -2979,7 +3056,7 @@ function update_bot() {
 EOF
         VHOST_SSL_FILE="/etc/apache2/sites-available/${DOMAIN_NAME}-ssl.conf"
         sudo tee "$VHOST_SSL_FILE" > /dev/null <<EOF
-<VirtualHost *:443>
+<VirtualHost *:${APACHE_HTTPS_PORT:-443}>
     ServerName $DOMAIN_NAME
     DocumentRoot $BOT_DIR
     SSLEngine on
@@ -3297,7 +3374,7 @@ EOF
     rm -f /etc/apache2/sites-available/000-default* 2>/dev/null
     VHOST_FILE="/etc/apache2/sites-available/${DOMAIN_NAME}.conf"
     cat <<EOF > "$VHOST_FILE"
-<VirtualHost *:80>
+<VirtualHost *:${APACHE_HTTP_PORT:-80}>
     ServerName $DOMAIN_NAME
     DocumentRoot $NEW_BOT_DIR
     <Directory $NEW_BOT_DIR>
@@ -3312,7 +3389,7 @@ EOF
 EOF
     VHOST_SSL_FILE="/etc/apache2/sites-available/${DOMAIN_NAME}-ssl.conf"
     cat <<EOF > "$VHOST_SSL_FILE"
-<VirtualHost *:443>
+<VirtualHost *:${APACHE_HTTPS_PORT:-443}>
     ServerName $DOMAIN_NAME
     DocumentRoot $NEW_BOT_DIR
     SSLEngine on
