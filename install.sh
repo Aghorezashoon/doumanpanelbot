@@ -679,49 +679,82 @@ setup_mysql_root() {
     sudo chmod 700 /root/confdouman || return 1
     touch /root/confdouman/dbrootdouman.txt || return 1
     sudo chmod 600 /root/confdouman/dbrootdouman.txt || return 1
-    local randomdbpasstxt passs userrr RANDOM_NUMBER
-    randomdbpasstxt=$(openssl rand -base64 10 | tr -dc 'a-zA-Z0-9' | cut -c1-8)
-    RANDOM_NUMBER=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | cut -c1-12)
-    echo "\$user = 'root';"               >> /root/confdouman/dbrootdouman.txt
-    echo "\$pass = '${randomdbpasstxt}';" >> /root/confdouman/dbrootdouman.txt
-    echo "\$path = '${RANDOM_NUMBER}';"   >> /root/confdouman/dbrootdouman.txt
-    passs=$(grep '$pass' /root/confdouman/dbrootdouman.txt | cut -d"'" -f2)
-    userrr=$(grep '$user' /root/confdouman/dbrootdouman.txt | cut -d"'" -f2)
-    local alter_ok=0
-    if sudo mysql -u "$userrr" -p"$passs" -e "alter user '$userrr'@'localhost' identified with mysql_native_password by '$passs';FLUSH PRIVILEGES;"; then
-        alter_ok=1
-    elif sudo mysql -e "alter user '$userrr'@'localhost' identified with mysql_native_password by '$passs';FLUSH PRIVILEGES;"; then
-        alter_ok=1
-    elif sudo mysql -e "alter user '$userrr'@'localhost' identified with caching_sha2_password by '$passs';FLUSH PRIVILEGES;"; then
-        alter_ok=1
-    elif sudo mysql -e "alter user '$userrr'@'localhost' identified by '$passs';FLUSH PRIVILEGES;"; then
-        alter_ok=1
-    fi
-    if [ "$alter_ok" -eq 1 ]; then
-        echo "SELECT 1" | mysql -u"$userrr" -p"$passs" >/dev/null 2>&1 && return 0
+
+    local passs userrr RANDOM_NUMBER
+    passs=$(grep '\$pass' /root/confdouman/dbrootdouman.txt 2>/dev/null | tail -1 | cut -d"'" -f2)
+    userrr=$(grep '\$user' /root/confdouman/dbrootdouman.txt 2>/dev/null | tail -1 | cut -d"'" -f2)
+    [ -z "$userrr" ] && userrr="root"
+    RANDOM_NUMBER=$(grep '\$path' /root/confdouman/dbrootdouman.txt 2>/dev/null | tail -1 | cut -d"'" -f2)
+    [ -z "$RANDOM_NUMBER" ] && RANDOM_NUMBER=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | cut -c1-12)
+
+    # 1) If existing saved credentials already work, do NOT alter anything!
+    if [ -n "$passs" ] && echo "SELECT 1" | mysql -u"$userrr" -p"$passs" >/dev/null 2>&1; then
+        echo -e " ${C_OK}●${CR} ${C_TXT}Existing database root credentials verified.${CR}"
+        return 0
     fi
 
-    local dropin_dir=""
-    local d
+    # 2) If passwordless root via socket works (Ubuntu default), configure cleanly without dropping users
+    if sudo mysql -e "SELECT 1;" >/dev/null 2>&1; then
+        echo -e " ${C_OK}●${CR} ${C_TXT}Connected to database via unix_socket.${CR}"
+        [ -z "$passs" ] && passs=$(openssl rand -base64 10 | tr -dc 'a-zA-Z0-9' | cut -c1-8)
+        sudo mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${passs}'; FLUSH PRIVILEGES;" 2>/dev/null || \
+        sudo mysql -e "SET PASSWORD FOR 'root'@'localhost' = PASSWORD('${passs}'); FLUSH PRIVILEGES;" 2>/dev/null || true
+
+        cat <<EOF > /root/confdouman/dbrootdouman.txt
+\$user = 'root';
+\$pass = '${passs}';
+\$path = '${RANDOM_NUMBER}';
+EOF
+        sudo chmod 600 /root/confdouman/dbrootdouman.txt
+        if echo "SELECT 1" | mysql -u"root" -p"$passs" >/dev/null 2>&1; then
+            return 0
+        fi
+    fi
+
+    # 3) If empty password connects directly
+    if echo "SELECT 1" | mysql -u root >/dev/null 2>&1; then
+        [ -z "$passs" ] && passs=$(openssl rand -base64 10 | tr -dc 'a-zA-Z0-9' | cut -c1-8)
+        mysql -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${passs}'; FLUSH PRIVILEGES;" 2>/dev/null || \
+        mysql -u root -e "SET PASSWORD FOR 'root'@'localhost' = PASSWORD('${passs}'); FLUSH PRIVILEGES;" 2>/dev/null || true
+        cat <<EOF > /root/confdouman/dbrootdouman.txt
+\$user = 'root';
+\$pass = '${passs}';
+\$path = '${RANDOM_NUMBER}';
+EOF
+        sudo chmod 600 /root/confdouman/dbrootdouman.txt
+        if echo "SELECT 1" | mysql -u"root" -p"$passs" >/dev/null 2>&1; then
+            return 0
+        fi
+    fi
+
+    # 4) Gentle recovery if needed (never drop users or wipe data)
+    local dropin_dir="" d
     for d in /etc/mysql/mysql.conf.d /etc/mysql/mariadb.conf.d /etc/mysql/conf.d; do
         [ -d "$d" ] && { dropin_dir="$d"; break; }
     done
     [ -n "$dropin_dir" ] || return 1
     local dropin="$dropin_dir/zz-douman-recovery.cnf"
     printf '[mysqld]\nskip-grant-tables\n' | sudo tee "$dropin" >/dev/null || return 1
-    sudo systemctl restart mysql
+    sudo systemctl restart mariadb 2>/dev/null || sudo systemctl restart mysql 2>/dev/null
+
+    local new_pass
+    new_pass=$(openssl rand -base64 10 | tr -dc 'a-zA-Z0-9' | cut -c1-8)
     sudo mysql <<EOF
 FLUSH PRIVILEGES;
-DROP USER IF EXISTS 'root'@'localhost';
-CREATE USER 'root'@'localhost' IDENTIFIED BY '${passs}';
-GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' WITH GRANT OPTION;
+ALTER USER 'root'@'localhost' IDENTIFIED BY '${new_pass}';
 FLUSH PRIVILEGES;
 EOF
     sudo rm -f "$dropin"
-    # Older installer versions appended the option to mysqld.cnf directly.
-    sudo sed -i '/^skip-grant-tables/d' /etc/mysql/mysql.conf.d/mysqld.cnf 2>/dev/null
-    sudo systemctl restart mysql
-    echo "SELECT 1" | mysql -u"$userrr" -p"$passs" >/dev/null 2>&1 || return 1
+    sudo sed -i '/^skip-grant-tables/d' /etc/mysql/mysql.conf.d/mysqld.cnf 2>/dev/null || true
+    sudo systemctl restart mariadb 2>/dev/null || sudo systemctl restart mysql 2>/dev/null
+
+    cat <<EOF > /root/confdouman/dbrootdouman.txt
+\$user = 'root';
+\$pass = '${new_pass}';
+\$path = '${RANDOM_NUMBER}';
+EOF
+    sudo chmod 600 /root/confdouman/dbrootdouman.txt
+    echo "SELECT 1" | mysql -u root -p"$new_pass" >/dev/null 2>&1 || return 1
     return 0
 }
 export -f setup_mysql_root
@@ -900,55 +933,115 @@ export -f _crontab_present _cron_unit_name _cron_daemon_active ensure_cron
 
 # Refuse to install on a server that already has conflicting software.
 # Only runs on a brand-new install (never on resume / Douman's own partial state).
-clean_conflicting_packages() {
-    echo -e " ${C_WARN}●${CR} Stopping and removing conflicting services (Apache, Nginx, MariaDB, MySQL, phpMyAdmin)..."
-    systemctl stop apache2 nginx mysql mariadb 2>/dev/null || true
-    systemctl disable apache2 nginx mysql mariadb 2>/dev/null || true
-    fuser -k 80/tcp 443/tcp 3306/tcp 2>/dev/null || true
-    DEBIAN_FRONTEND=noninteractive apt-get purge -y 'apache2*' 'nginx*' 'mariadb*' 'mysql*' 'phpmyadmin*' 2>/dev/null || true
-    DEBIAN_FRONTEND=noninteractive apt-get autoremove -y 2>/dev/null || true
-    rm -rf /etc/apache2 /etc/nginx /etc/mysql /var/lib/mysql /var/www/html/index.html 2>/dev/null || true
-    echo -e " ${C_OK}●${CR} Cleanup completed successfully. System is fresh for installation."
+# ── Service & Port Detection Helpers ──
+
+is_apache_installed() {
+    _pkg_installed apache2 || command -v apache2 >/dev/null 2>&1 || command -v apachectl >/dev/null 2>&1
 }
-export -f clean_conflicting_packages
+export -f is_apache_installed
 
-# Handle servers with existing/conflicting packages.
-# Gives the user the choice to auto-clean or continue, rather than hard-failing.
-precheck_fresh_server() {
-    local found=()
-    _pkg_installed apache2 && found+=("apache2 (web server)")
-    { _pkg_installed nginx || _pkg_installed nginx-core || _pkg_installed nginx-full; } && found+=("nginx (web server)")
-    { _pkg_installed mysql-server || _pkg_installed_glob 'mysql-server-[0-9]*'; } && found+=("mysql-server")
-    { _pkg_installed mariadb-server || _pkg_installed_glob 'mariadb-server-[0-9]*'; } && found+=("mariadb-server")
-    _pkg_installed phpmyadmin && found+=("phpMyAdmin")
-    # Known VPN panels
-    { [ -d /opt/marzban ] || [ -d /var/lib/marzban ]; } && found+=("Marzban panel")
-    { [ -d /opt/hiddify-manager ] || [ -d /opt/hiddify-config ]; } && found+=("Hiddify panel")
+is_apache_running() {
+    systemctl is-active --quiet apache2 2>/dev/null || systemctl is-active --quiet httpd 2>/dev/null
+}
+export -f is_apache_running
 
-    if [ ${#found[@]} -gt 0 ]; then
+detect_db_type() {
+    if _pkg_installed mariadb-server || _pkg_installed_glob 'mariadb-server-[0-9]*' || command -v mariadbd >/dev/null 2>&1; then
+        echo "mariadb"
+    elif _pkg_installed mysql-server || _pkg_installed_glob 'mysql-server-[0-9]*' || command -v mysqld >/dev/null 2>&1; then
+        echo "mysql"
+    else
+        echo "none"
+    fi
+}
+export -f detect_db_type
+
+is_db_installed() {
+    [ "$(detect_db_type)" != "none" ]
+}
+export -f is_db_installed
+
+is_db_running() {
+    systemctl is-active --quiet mariadb 2>/dev/null || systemctl is-active --quiet mysql 2>/dev/null || systemctl is-active --quiet mysqld 2>/dev/null
+}
+export -f is_db_running
+
+get_port_process() {
+    local port="$1"
+    local proc=""
+    if command -v ss >/dev/null 2>&1; then
+        proc=$(ss -tlpn "sport = :$port" 2>/dev/null | awk -F'users:\(\(' 'NF>1 {print $2}' | awk -F'"' '{print $2}' | head -1)
+    fi
+    if [ -z "$proc" ] && command -v lsof >/dev/null 2>&1; then
+        proc=$(lsof -iTCP:"$port" -sTCP:LISTEN -Pn 2>/dev/null | awk 'NR>1 {print $1}' | head -1)
+    fi
+    if [ -z "$proc" ] && command -v fuser >/dev/null 2>&1; then
+        local pid
+        pid=$(fuser "$port/tcp" 2>/dev/null | awk '{print $1}')
+        [ -n "$pid" ] && proc=$(ps -p "$pid" -o comm= 2>/dev/null)
+    fi
+    if [ -z "$proc" ] && command -v netstat >/dev/null 2>&1; then
+        proc=$(netstat -tlpn 2>/dev/null | grep ":$port " | awk '{print $7}' | cut -d'/' -f2 | head -1)
+    fi
+    echo "$proc"
+}
+export -f get_port_process
+
+check_port_conflicts() {
+    local conflicts=()
+    local p80_proc p443_proc p3306_proc
+
+    p80_proc="$(get_port_process 80)"
+    if [ -n "$p80_proc" ] && [ "$p80_proc" != "apache2" ] && [ "$p80_proc" != "httpd" ]; then
+        conflicts+=("Port 80 is occupied by '$p80_proc' (Apache2 requires port 80)")
+    fi
+
+    p443_proc="$(get_port_process 443)"
+    if [ -n "$p443_proc" ] && [ "$p443_proc" != "apache2" ] && [ "$p443_proc" != "httpd" ]; then
+        conflicts+=("Port 443 is occupied by '$p443_proc' (Apache2 requires port 443)")
+    fi
+
+    p3306_proc="$(get_port_process 3306)"
+    if [ -n "$p3306_proc" ] && [ "$p3306_proc" != "mysqld" ] && [ "$p3306_proc" != "mariadbd" ] && [ "$p3306_proc" != "mariadb" ]; then
+        conflicts+=("Port 3306 is occupied by '$p3306_proc' (Database requires port 3306)")
+    fi
+
+    if [ ${#conflicts[@]} -gt 0 ]; then
         clear
         banner
-        _sec "Existing Components Detected"
-        printf " ${C_WARN}●${CR} ${C_TXT}The following components were detected on this server:${CR}\n"
-        local f
-        for f in "${found[@]}"; do printf "      ${C_WARN}-${CR} ${C_TXT}%s${CR}\n" "$f"; done
+        _sec "Port Conflict Detected"
+        printf " ${C_WARN}●${CR} ${C_TXT}The following conflicting services were detected listening on required ports:${CR}\n"
+        local c
+        for c in "${conflicts[@]}"; do
+            printf "      ${C_BAD}!${CR} ${C_TXT}%s${CR}\n" "$c"
+        done
         echo ""
-        printf "   ${C_KEY}[1]${CR} ${C_OK}Auto-clean & purge conflicting packages and install fresh (Recommended)${CR}\n"
-        printf "   ${C_KEY}[2]${CR} ${C_TXT}Ignore and continue installation anyway${CR}\n"
-        printf "   ${C_KEY}[0]${CR} ${C_DIM}Cancel and return to menu${CR}\n\n"
+        printf " ${C_DIM}Douman Panel Pro requires ports 80/443 for Apache and 3306 for MySQL/MariaDB.${CR}\n\n"
+        printf "   ${C_KEY}[1]${CR} ${C_OK}Stop conflicting service(s) and continue installation${CR}\n"
+        printf "   ${C_KEY}[2]${CR} ${C_TXT}Ignore and continue anyway${CR}\n"
+        printf "   ${C_KEY}[0]${CR} ${C_DIM}Cancel installation to resolve manually${CR}\n\n"
         printf " ${C_PROMPT}❯${CR} Choose an option ${C_DIM}[1/2/0]${CR}: "
-        read -r _choice_clean
-        case "$_choice_clean" in
+        read -r _choice_port
+        case "$_choice_port" in
             1)
                 echo ""
-                clean_conflicting_packages
-                sleep 2
+                if [ -n "$p80_proc" ] && [ "$p80_proc" != "apache2" ] && [ "$p80_proc" != "httpd" ]; then
+                    echo -e " ${C_WARN}●${CR} Stopping service: $p80_proc..."
+                    systemctl stop "$p80_proc" 2>/dev/null || fuser -k 80/tcp 2>/dev/null || true
+                fi
+                if [ -n "$p443_proc" ] && [ "$p443_proc" != "apache2" ] && [ "$p443_proc" != "httpd" ]; then
+                    echo -e " ${C_WARN}●${CR} Stopping service: $p443_proc..."
+                    systemctl stop "$p443_proc" 2>/dev/null || fuser -k 443/tcp 2>/dev/null || true
+                fi
+                if [ -n "$p3306_proc" ] && [ "$p3306_proc" != "mysqld" ] && [ "$p3306_proc" != "mariadbd" ] && [ "$p3306_proc" != "mariadb" ]; then
+                    echo -e " ${C_WARN}●${CR} Stopping service: $p3306_proc..."
+                    systemctl stop "$p3306_proc" 2>/dev/null || fuser -k 3306/tcp 2>/dev/null || true
+                fi
+                sleep 1
                 return 0
                 ;;
             2)
-                echo ""
-                echo -e " ${C_OK}●${CR} Continuing with existing components..."
-                sleep 1
+                echo -e " ${C_OK}●${CR} Continuing with installation..."
                 return 0
                 ;;
             *)
@@ -959,23 +1052,101 @@ precheck_fresh_server() {
     fi
     return 0
 }
+export -f check_port_conflicts
 
+# Pre-installation validation logic:
+# Apache2 and MariaDB/MySQL are REQUIRED dependencies, NOT conflicts!
+# They will be detected, preserved, and reused if already present.
+precheck_fresh_server() {
+    # 1. Check for port conflicts
+    check_port_conflicts || return 1
 
+    # 2. Check for active third-party VPN panels on ports 80/443
+    local panel_conflicts=()
+    if { [ -d /opt/marzban ] || [ -d /var/lib/marzban ]; } && systemctl is-active --quiet marzban 2>/dev/null; then
+        panel_conflicts+=("Marzban panel (active)")
+    fi
+    if { [ -d /opt/hiddify-manager ] || [ -d /opt/hiddify-config ]; } && systemctl is-active --quiet hiddify-manager 2>/dev/null; then
+        panel_conflicts+=("Hiddify panel (active)")
+    fi
+
+    if [ ${#panel_conflicts[@]} -gt 0 ]; then
+        clear
+        banner
+        _sec "Conflicting VPN Panel Detected"
+        printf " ${C_WARN}●${CR} ${C_TXT}The following active panel services were detected:${CR}\n"
+        local p
+        for p in "${panel_conflicts[@]}"; do printf "      ${C_WARN}-${CR} ${C_TXT}%s${CR}\n" "$p"; done
+        echo ""
+        printf "   ${C_KEY}[1]${CR} ${C_TXT}Ignore and continue anyway${CR}\n"
+        printf "   ${C_KEY}[0]${CR} ${C_DIM}Cancel and return to menu${CR}\n\n"
+        printf " ${C_PROMPT}❯${CR} Choose an option ${C_DIM}[1/0]${CR}: "
+        read -r _choice_panel
+        case "$_choice_panel" in
+            1)
+                echo -e " ${C_OK}●${CR} Continuing..."
+                sleep 1
+                ;;
+            *)
+                echo -e " ${C_WARN}●${CR} Installation cancelled."
+                return 1
+                ;;
+        esac
+    fi
+
+    # 3. Detect and report existing required dependencies (Apache2, MariaDB/MySQL)
+    local detected=()
+    if is_apache_installed; then
+        if is_apache_running; then
+            detected+=("Apache2 (installed & running)")
+        else
+            detected+=("Apache2 (installed, will be started)")
+        fi
+    fi
+    local db_type
+    db_type="$(detect_db_type)"
+    if [ "$db_type" = "mariadb" ]; then
+        if is_db_running; then
+            detected+=("MariaDB (installed & running)")
+        else
+            detected+=("MariaDB (installed, will be started)")
+        fi
+    elif [ "$db_type" = "mysql" ]; then
+        if is_db_running; then
+            detected+=("MySQL (installed & running)")
+        else
+            detected+=("MySQL (installed, will be started)")
+        fi
+    fi
+
+    if [ ${#detected[@]} -gt 0 ]; then
+        echo ""
+        echo -e " ${C_OK}●${CR} ${C_TXT}Detected existing required components:${CR}"
+        local d
+        for d in "${detected[@]}"; do
+            echo -e "   ${C_OK}✓${CR} ${C_KEY}${d}${CR}"
+        done
+        echo -e " ${C_DIM}Existing installations, databases, users, and virtual hosts will be preserved.${CR}"
+        sleep 1
+    fi
+
+    return 0
+}
+export -f precheck_fresh_server
+
+# Safe, non-destructive MySQL/MariaDB service check (never wipes data)
 repair_mysql() {
     export DEBIAN_FRONTEND=noninteractive
-    systemctl stop mysql 2>/dev/null
-    # 1) Gentle fix first
-    dpkg --configure -a >/dev/null 2>&1
-    apt-get install -f -y >/dev/null 2>&1
-    if dpkg-query -W -f='${Package} ${Status}\n' 'mysql-server-[0-9]*' 2>/dev/null | grep -q 'install ok installed'; then
+    if is_db_running; then
         return 0
     fi
-    # 2) Hard reset: purge MySQL and wipe its (empty) data dir, then reinstall fresh
-    apt-get purge -y 'mysql-server*' 'mysql-client*' 'mysql-community*' mysql-common >/dev/null 2>&1
-    apt-get autoremove -y >/dev/null 2>&1
-    rm -rf /var/lib/mysql /var/log/mysql /etc/mysql
+    systemctl start mariadb 2>/dev/null || systemctl start mysql 2>/dev/null || true
+    if is_db_running; then
+        return 0
+    fi
     dpkg --configure -a >/dev/null 2>&1
-    apt-get update --allow-releaseinfo-change >/dev/null 2>&1
+    apt-get install -f -y -o DPkg::Lock::Timeout=180 >/dev/null 2>&1
+    systemctl restart mariadb 2>/dev/null || systemctl restart mysql 2>/dev/null || true
     return 0
 }
 export -f repair_mysql
@@ -2152,12 +2323,47 @@ function install_bot() {
             install_pause "PHP version below ${PHP_MIN_VERSION}"
         fi
 
-        WEBSTACK_CMD="DEBIAN_FRONTEND=noninteractive apt install -y mysql-server apache2 libapache2-mod-php${PHP_VER} php${PHP_VER}-mbstring php${PHP_VER}-zip php${PHP_VER}-gd php${PHP_VER}-curl php${PHP_VER}-intl php${PHP_VER}-xml php${PHP_VER}-bcmath"
-        if ! run_step "Installing web stack (Apache, MySQL, PHP modules)" "$WEBSTACK_CMD"; then
-            run_step "Repairing broken MySQL installation" "repair_mysql" \
-                || { show_step_error; install_pause "Repairing MySQL"; }
-            run_step "Re-installing web stack" "$WEBSTACK_CMD" \
-                || { show_step_error; install_pause "Installing web stack"; }
+        local needed_pkgs=()
+
+        if is_apache_installed; then
+            echo -e " ${C_OK}●${CR} ${C_TXT}Existing Apache2 installation detected — preserving and reusing.${CR}"
+            systemctl enable --now apache2 2>/dev/null || systemctl start apache2 2>/dev/null || true
+        else
+            echo -e " ${C_DIM}Apache2 not found — adding apache2 to install list.${CR}"
+            needed_pkgs+=("apache2")
+        fi
+
+        local db_type
+        db_type="$(detect_db_type)"
+        if [ "$db_type" = "mariadb" ]; then
+            echo -e " ${C_OK}●${CR} ${C_TXT}Existing MariaDB installation detected — preserving and reusing.${CR}"
+            systemctl enable --now mariadb 2>/dev/null || systemctl start mariadb 2>/dev/null || true
+        elif [ "$db_type" = "mysql" ]; then
+            echo -e " ${C_OK}●${CR} ${C_TXT}Existing MySQL installation detected — preserving and reusing.${CR}"
+            systemctl enable --now mysql 2>/dev/null || systemctl start mysql 2>/dev/null || true
+        else
+            echo -e " ${C_DIM}No database server found — adding mysql-server to install list.${CR}"
+            needed_pkgs+=("mysql-server")
+        fi
+
+        needed_pkgs+=(
+            "libapache2-mod-php${PHP_VER}"
+            "php${PHP_VER}-mysql"
+            "php${PHP_VER}-mbstring"
+            "php${PHP_VER}-zip"
+            "php${PHP_VER}-gd"
+            "php${PHP_VER}-curl"
+            "php${PHP_VER}-intl"
+            "php${PHP_VER}-xml"
+            "php${PHP_VER}-bcmath"
+        )
+
+        WEBSTACK_CMD="DEBIAN_FRONTEND=noninteractive apt install -y -o DPkg::Lock::Timeout=180 ${needed_pkgs[*]}"
+        if ! run_step "Installing web & PHP modules" "$WEBSTACK_CMD"; then
+            run_step "Checking database service state" "repair_mysql" \
+                || { show_step_error; install_pause "Checking database service"; }
+            run_step "Retrying web & PHP modules installation" "$WEBSTACK_CMD" \
+                || { show_step_error; install_pause "Installing web & PHP modules"; }
         fi
 
         local _other_php="" _pv
@@ -2168,24 +2374,25 @@ function install_bot() {
             "a2dismod${_other_php} mpm_event mpm_worker 2>/dev/null; a2enmod php${PHP_VER} mpm_prefork 2>/dev/null; update-alternatives --set php /usr/bin/php${PHP_VER} 2>/dev/null; systemctl restart apache2" \
             || { show_step_error; install_pause "Setting PHP ${PHP_VER} as default"; }
 
-        echo 'phpmyadmin phpmyadmin/dbconfig-install boolean true' | sudo debconf-set-selections
-        local pma_pass
-        pma_pass=$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | cut -c1-16)
-        echo "phpmyadmin phpmyadmin/app-password-confirm password ${pma_pass}" | sudo debconf-set-selections
-        echo "phpmyadmin phpmyadmin/mysql/admin-pass password ${pma_pass}" | sudo debconf-set-selections
-        echo "phpmyadmin phpmyadmin/mysql/app-pass password ${pma_pass}" | sudo debconf-set-selections
-        echo 'phpmyadmin phpmyadmin/reconfigure-webserver multiselect apache2' | sudo debconf-set-selections
-        run_step "Installing phpMyAdmin" \
-            "DEBIAN_FRONTEND=noninteractive apt-get install -y phpmyadmin" \
-            || { show_step_error; install_pause "Installing phpMyAdmin"; }
-
-        if [ -f /etc/apache2/conf-available/phpmyadmin.conf ]; then
-            sudo rm -f /etc/apache2/conf-available/phpmyadmin.conf
+        if ! _pkg_installed phpmyadmin; then
+            echo 'phpmyadmin phpmyadmin/dbconfig-install boolean true' | sudo debconf-set-selections
+            local pma_pass
+            pma_pass=$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | cut -c1-16)
+            echo "phpmyadmin phpmyadmin/app-password-confirm password ${pma_pass}" | sudo debconf-set-selections
+            echo "phpmyadmin phpmyadmin/mysql/admin-pass password ${pma_pass}" | sudo debconf-set-selections
+            echo "phpmyadmin phpmyadmin/mysql/app-pass password ${pma_pass}" | sudo debconf-set-selections
+            echo 'phpmyadmin phpmyadmin/reconfigure-webserver multiselect apache2' | sudo debconf-set-selections
+            run_step "Installing phpMyAdmin" \
+                "DEBIAN_FRONTEND=noninteractive apt-get install -y phpmyadmin" \
+                || { show_step_error; install_pause "Installing phpMyAdmin"; }
+        else
+            echo -e " ${C_OK}●${CR} ${C_TXT}Existing phpMyAdmin installation detected — reusing.${CR}"
         fi
-        sudo ln -s /etc/phpmyadmin/apache.conf /etc/apache2/conf-available/phpmyadmin.conf || {
-            echo -e "\e[91mError: Failed to create symbolic link for phpMyAdmin configuration.\033[0m"
-            install_pause "phpMyAdmin symlink"
-        }
+
+        if [ -f /etc/phpmyadmin/apache.conf ] && [ ! -f /etc/apache2/conf-available/phpmyadmin.conf ]; then
+            sudo ln -s /etc/phpmyadmin/apache.conf /etc/apache2/conf-available/phpmyadmin.conf 2>/dev/null || true
+        fi
+        a2enconf phpmyadmin 2>/dev/null || true
 
         run_step "Installing extra modules (php-soap, php-ssh2, libssh2)" \
             "DEBIAN_FRONTEND=noninteractive apt-get install -y php${PHP_VER}-soap php${PHP_VER}-ssh2 libssh2-1-dev libssh2-1" \
@@ -2345,7 +2552,7 @@ function install_bot() {
         AllowOverride All
         Require all granted
     </Directory>
-    Include /etc/apache2/conf-available/phpmyadmin.conf
+    IncludeOptional /etc/apache2/conf-available/phpmyadmin.conf
     ErrorLog \${APACHE_LOG_DIR}/${DOMAIN_NAME}-error.log
     CustomLog \${APACHE_LOG_DIR}/${DOMAIN_NAME}-access.log combined
 </VirtualHost>
@@ -2363,13 +2570,13 @@ EOF
         AllowOverride All
         Require all granted
     </Directory>
-    Include /etc/apache2/conf-available/phpmyadmin.conf
+    IncludeOptional /etc/apache2/conf-available/phpmyadmin.conf
     ErrorLog \${APACHE_LOG_DIR}/${DOMAIN_NAME}-error.log
     CustomLog \${APACHE_LOG_DIR}/${DOMAIN_NAME}-access.log combined
 </VirtualHost>
 EOF
         run_step "Configuring Apache virtual hosts" \
-            "a2ensite '${DOMAIN_NAME}.conf' && a2ensite '${DOMAIN_NAME}-ssl.conf' ; a2dissite 000-default.conf 2>/dev/null ; a2dissite 000-default-le-ssl.conf 2>/dev/null ; a2dissite default-ssl.conf 2>/dev/null ; rm -f /etc/apache2/sites-enabled/000-default.conf /etc/apache2/sites-enabled/000-default-le-ssl.conf /etc/apache2/sites-enabled/default-ssl.conf ; rm -f /etc/apache2/sites-available/000-default.conf /etc/apache2/sites-available/000-default-le-ssl.conf /etc/apache2/sites-available/default-ssl.conf ; a2enmod ssl ; a2enmod rewrite ; systemctl restart apache2" \
+            "a2enmod ssl rewrite headers 2>/dev/null ; a2ensite '${DOMAIN_NAME}.conf' '${DOMAIN_NAME}-ssl.conf' 2>/dev/null ; a2dissite 000-default.conf 2>/dev/null || true ; apache2ctl configtest && systemctl restart apache2" \
             || { show_step_error; install_pause "Configuring Apache virtual hosts"; }
         mark_phase VHOST
     else
@@ -2765,7 +2972,7 @@ function update_bot() {
         AllowOverride All
         Require all granted
     </Directory>
-    Include /etc/apache2/conf-available/phpmyadmin.conf
+    IncludeOptional /etc/apache2/conf-available/phpmyadmin.conf
     ErrorLog \${APACHE_LOG_DIR}/${DOMAIN_NAME}-error.log
     CustomLog \${APACHE_LOG_DIR}/${DOMAIN_NAME}-access.log combined
 </VirtualHost>
@@ -2783,7 +2990,7 @@ EOF
         AllowOverride All
         Require all granted
     </Directory>
-    Include /etc/apache2/conf-available/phpmyadmin.conf
+    IncludeOptional /etc/apache2/conf-available/phpmyadmin.conf
     ErrorLog \${APACHE_LOG_DIR}/${DOMAIN_NAME}-error.log
     CustomLog \${APACHE_LOG_DIR}/${DOMAIN_NAME}-access.log combined
 </VirtualHost>
@@ -3098,7 +3305,7 @@ EOF
         AllowOverride All
         Require all granted
     </Directory>
-    Include /etc/apache2/conf-available/phpmyadmin.conf
+    IncludeOptional /etc/apache2/conf-available/phpmyadmin.conf
     ErrorLog \${APACHE_LOG_DIR}/${DOMAIN_NAME}-error.log
     CustomLog \${APACHE_LOG_DIR}/${DOMAIN_NAME}-access.log combined
 </VirtualHost>
@@ -3116,7 +3323,7 @@ EOF
         AllowOverride All
         Require all granted
     </Directory>
-    Include /etc/apache2/conf-available/phpmyadmin.conf
+    IncludeOptional /etc/apache2/conf-available/phpmyadmin.conf
     ErrorLog \${APACHE_LOG_DIR}/${DOMAIN_NAME}-error.log
     CustomLog \${APACHE_LOG_DIR}/${DOMAIN_NAME}-access.log combined
 </VirtualHost>
