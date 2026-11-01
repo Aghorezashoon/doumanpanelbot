@@ -287,14 +287,24 @@ ensure_dns() {
 }
 
 # Ensure /usr/local/bin/mirza points at the master script
-_link_mirza() {
-    local master="$1" link="$2"
-    chmod +x "$master" 2>/dev/null
-    if [ ! -e "$link" ] || [ "$(readlink -f "$link" 2>/dev/null)" != "$(readlink -f "$master" 2>/dev/null)" ]; then
-        ln -sf "$master" "$link"
-    fi
-    chmod +x "$link" 2>/dev/null
+_link_mirza() {
+    local master="$1" link="$2"
+    chmod +x "$master" 2>/dev/null
+    if [ ! -e "$link" ] || [ "$(readlink -f "$link" 2>/dev/null)" != "$(readlink -f "$master" 2>/dev/null)" ]; then
+        ln -sf "$master" "$link"
+    fi
+    chmod +x "$link" 2>/dev/null
+}
+
+fix_broken_mirrors() {
+    for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list; do
+        if [ -f "$f" ]; then
+            sed -i 's|https\?://mirror\.netlen\.com\.tr/ubuntu|http://archive.ubuntu.com/ubuntu|g' "$f" 2>/dev/null
+        fi
+    done
 }
+export -f fix_broken_mirrors
+
 
 # Self-update: every run, fetch the latest script from GitHub, validate it,
 # install it to /root/install.sh, link it into /usr/local/bin, and re-exec.
@@ -497,6 +507,7 @@ php_repo_disable() {
 export -f php_repo_disable
 
 setup_php_repo() {
+    fix_broken_mirrors
     detect_os
     export DEBIAN_FRONTEND=noninteractive
     # add-apt-repository lives in software-properties-common - minimal cloud
@@ -506,8 +517,11 @@ setup_php_repo() {
         apt-get install -y software-properties-common ca-certificates curl gnupg \
             -o DPkg::Lock::Timeout=180 || return 1
     fi
+    fix_broken_mirrors
     add-apt-repository -y ppa:ondrej/php || \
-        LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php || return 1
+        LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php || {
+            echo "Notice: ondrej/php PPA was skipped or failed. Using Ubuntu official repository."
+        }
 
     # Does the PPA actually build for this release? Pinning to an older series
     if [ -n "$OS_CODENAME" ] && ! php_ppa_has_series "$OS_CODENAME"; then
