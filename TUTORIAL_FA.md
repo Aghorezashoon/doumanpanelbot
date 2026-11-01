@@ -34,17 +34,15 @@
 ssh root@YOUR_SERVER_IP
 ```
 
-### مرحله ۲: کلون کردن سورس پروژه
-دستور زیر را اجرا کنید تا کدهای پروژه دانلود شود:
+### مرحله ۲: اجرای دستور نصب خودکار
+دستور زیر را در ترمینال سرور وارد کنید تا دانلود و منوی نصاب اجرا شود:
 ```bash
-git clone https://github.com/Aghorezashoon/doumanpanelbot.git && cd doumanpanelbot
+curl -sSL https://raw.githubusercontent.com/Aghorezashoon/doumanpanelbot/main/install.sh -o install.sh && bash install.sh
 ```
-*(اگر ریپازیتوری پرایوت است، نام کاربری گیت‌هاب و Personal Access Token خود را وارد کنید).*
 
-### مرحله ۳: اجرای نصاب هوشمند
-دستور زیر را بزنید:
+یا در صورت تمایل به کلون کردن سورس:
 ```bash
-bash install.sh
+git clone https://github.com/Aghorezashoon/doumanpanelbot.git && cd doumanpanelbot && bash install.sh
 ```
 
 منوی زیر ظاهر می‌شود:

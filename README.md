@@ -52,13 +52,16 @@
 
 ---
 
-### دستور نصب (روی سرور با دسترسی root):
+### دستور نصب سریع تک‌خطی (روی سرور با دسترسی root):
 
+```bash
+curl -sSL https://raw.githubusercontent.com/Aghorezashoon/doumanpanelbot/main/install.sh -o install.sh && bash install.sh
+```
+
+یا از طریق کلون کردن گیت:
 ```bash
 git clone https://github.com/Aghorezashoon/doumanpanelbot.git && cd doumanpanelbot && bash install.sh
 ```
-
-> **نکته:** چون ریپازیتوری پرایوت است، در صورت درخواست گیت‌هاب می‌توانید Personal Access Token خود را وارد کنید یا فایل‌های این پوشه را با دستور `scp` یا ابزار SFTP به سرور منتقل کرده و `bash install.sh` را اجرا کنید.
 
 پس از اجرای اسکریپت، منوی تعاملی زیر ظاهر می‌شود:
 ```
