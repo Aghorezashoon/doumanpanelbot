@@ -900,6 +900,20 @@ export -f _crontab_present _cron_unit_name _cron_daemon_active ensure_cron
 
 # Refuse to install on a server that already has conflicting software.
 # Only runs on a brand-new install (never on resume / Douman's own partial state).
+clean_conflicting_packages() {
+    echo -e " ${C_WARN}●${CR} Stopping and removing conflicting services (Apache, Nginx, MariaDB, MySQL, phpMyAdmin)..."
+    systemctl stop apache2 nginx mysql mariadb 2>/dev/null || true
+    systemctl disable apache2 nginx mysql mariadb 2>/dev/null || true
+    fuser -k 80/tcp 443/tcp 3306/tcp 2>/dev/null || true
+    DEBIAN_FRONTEND=noninteractive apt-get purge -y 'apache2*' 'nginx*' 'mariadb*' 'mysql*' 'phpmyadmin*' 2>/dev/null || true
+    DEBIAN_FRONTEND=noninteractive apt-get autoremove -y 2>/dev/null || true
+    rm -rf /etc/apache2 /etc/nginx /etc/mysql /var/lib/mysql /var/www/html/index.html 2>/dev/null || true
+    echo -e " ${C_OK}●${CR} Cleanup completed successfully. System is fresh for installation."
+}
+export -f clean_conflicting_packages
+
+# Handle servers with existing/conflicting packages.
+# Gives the user the choice to auto-clean or continue, rather than hard-failing.
 precheck_fresh_server() {
     local found=()
     _pkg_installed apache2 && found+=("apache2 (web server)")
@@ -914,15 +928,34 @@ precheck_fresh_server() {
     if [ ${#found[@]} -gt 0 ]; then
         clear
         banner
-        _sec "Server is not clean"
-        printf " ${C_BAD}●${CR} ${C_BAD}This installer needs a fresh server with no other software installed.${CR}\n"
-        printf " ${C_DIM}Detected conflicting components:${CR}\n"
+        _sec "Existing Components Detected"
+        printf " ${C_WARN}●${CR} ${C_TXT}The following components were detected on this server:${CR}\n"
         local f
         for f in "${found[@]}"; do printf "      ${C_WARN}-${CR} ${C_TXT}%s${CR}\n" "$f"; done
         echo ""
-        printf " ${C_TXT}Use a clean Ubuntu 22.04/24.04/26.04 server (no web server, database, or panel)${CR}\n"
-        printf " ${C_TXT}or reinstall the OS, then run the installer again.${CR}\n"
-        return 1
+        printf "   ${C_KEY}[1]${CR} ${C_OK}Auto-clean & purge conflicting packages and install fresh (Recommended)${CR}\n"
+        printf "   ${C_KEY}[2]${CR} ${C_TXT}Ignore and continue installation anyway${CR}\n"
+        printf "   ${C_KEY}[0]${CR} ${C_DIM}Cancel and return to menu${CR}\n\n"
+        printf " ${C_PROMPT}❯${CR} Choose an option ${C_DIM}[1/2/0]${CR}: "
+        read -r _choice_clean
+        case "$_choice_clean" in
+            1)
+                echo ""
+                clean_conflicting_packages
+                sleep 2
+                return 0
+                ;;
+            2)
+                echo ""
+                echo -e " ${C_OK}●${CR} Continuing with existing components..."
+                sleep 1
+                return 0
+                ;;
+            *)
+                echo -e " ${C_WARN}●${CR} Installation cancelled."
+                return 1
+                ;;
+        esac
     fi
     return 0
 }
