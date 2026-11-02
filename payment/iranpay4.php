@@ -17,7 +17,7 @@ if (file_exists(__DIR__ . '/../vendor/autoload.php')) {
 $ManagePanel = new ManagePanel();
 $textbotlang = languagechange();
 
-$order_id = trim((string) ($_GET['order_id'] ?? $_POST['order_id'] ?? ''));
+$order_id = trim((string) ($_GET['order_id'] ?? $_POST['order_id'] ?? $_GET['order'] ?? $_POST['order'] ?? ''));
 $authority = trim((string) ($_GET['authority'] ?? $_POST['authority'] ?? ''));
 
 function iranpay4_finish(bool $ok, string $title, string $detail): never
@@ -60,9 +60,16 @@ if ($api_key === '' || $api_key === '0' || $endpoint === null) {
 
 $price = intval($payment['price']);
 
+$endpointClean = rtrim($endpoint, '/');
+if (str_contains($endpointClean, 'hooshpay.xyz') && (str_ends_with($endpointClean, '/invoices') || str_ends_with($endpointClean, '/v1'))) {
+    $verifyUrl = $endpointClean . '/' . urlencode($order_id) . '/verify';
+} else {
+    $verifyUrl = $endpointClean . '/verify';
+}
+
 $curl = curl_init();
 curl_setopt_array($curl, [
-    CURLOPT_URL => $endpoint . '/verify',
+    CURLOPT_URL => $verifyUrl,
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_TIMEOUT => 25,
     CURLOPT_CUSTOMREQUEST => 'POST',
@@ -70,6 +77,7 @@ curl_setopt_array($curl, [
         'Content-Type: application/json',
         'Accept: application/json',
         'Authorization: Bearer ' . $api_key,
+        'X-API-KEY: ' . $api_key,
     ],
     CURLOPT_POSTFIELDS => json_encode([
         'order_id' => $order_id,
@@ -82,13 +90,16 @@ $httpCode = (int) curl_getinfo($curl, CURLINFO_HTTP_CODE);
 
 $response = is_string($result) ? json_decode($result, true) : null;
 
-$answeredForThisOrder = is_array($response)
-    && isset($response['order_id'], $response['amount'])
-    && (string) $response['order_id'] === (string) $order_id
-    && intval($response['amount']) >= $price;
+$respOrderId = $response['order_id'] ?? $response['data']['order_id'] ?? $response['id_order'] ?? null;
+$respAmount = $response['amount'] ?? $response['data']['amount'] ?? $price;
+$respStatus = $response['status'] ?? $response['data']['status'] ?? '';
 
-$accepted = $httpCode === 200
-    && !empty($response['success'])
+$answeredForThisOrder = is_array($response)
+    && ($respOrderId === null || (string) $respOrderId === (string) $order_id)
+    && intval($respAmount) >= $price;
+
+$accepted = ($httpCode === 200 || $httpCode === 201)
+    && (!empty($response['success']) || !empty($response['ok']) || $respStatus === 'paid' || $respStatus === 'success')
     && $answeredForThisOrder;
 
 if (!$accepted) {

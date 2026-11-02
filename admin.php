@@ -4866,10 +4866,16 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['algorithmExtend']['saveData']);
     step('home', $from_id);
-} elseif ($text == $textbotlang['keyboard']['apiToken'] && $adminrulecheck['rule'] == "administrator") {
-    $token = bin2hex(random_bytes(16));
-    update("setting", "api_token", $token, null, null);
-    sendmessage($from_id, sprintf($textbotlang['Admin']['api']['token'], $token), null, 'HTML');
+} elseif (($text == $textbotlang['keyboard']['apiToken'] || $text == "/token" || $text == "/token2") && ($adminrulecheck['rule'] == "administrator" || in_array($from_id, $admin_ids))) {
+    $token = select("setting", "api_token")['api_token'] ?? '';
+    if (empty($token) || $token === 'none') {
+        $token = bin2hex(random_bytes(16));
+        update("setting", "api_token", $token, null, null);
+    }
+    $msg = "🔑 <b>توکن API ربات شما:</b>\n\n<code>$token</code>\n\n"
+        . "🌐 <b>دامنه ربات:</b>\n<code>https://$domainhosts</code>\n\n"
+        . "💡 از این اطلاعات می‌توانید برای اتصال درگاه‌هایی مانند <b>هوش‌پی (HooshPay)</b> استفاده کنید.";
+    sendmessage($from_id, $msg, null, 'HTML');
     $apiDocsUrl = "https://$domainhostsEscaped/api/index.html";
     sendmessage($from_id, sprintf($textbotlang['Admin']['api']['docsLink'], $apiDocsUrl), null, 'HTML');
 } elseif ($text == $textbotlang['keyboard']['activateWebPanel'] && $adminrulecheck['rule'] == "administrator") {

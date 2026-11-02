@@ -824,32 +824,14 @@ function abangatewayEndpoint(): ?string
     return rtrim($endpoint, '/');
 }
 
-function createPayiranpay4($price, $order_id)
-{
-    global $domainhosts;
-
-    $api_key = trim((string) getPaySettingValue('apiiranpay4', ''));
-    $endpoint = abangatewayEndpoint();
-    if ($api_key === '' || $api_key === '0' || $endpoint === null) {
-        return ['success' => false, 'message' => 'iranpay4: key or endpoint is unset'];
-    }
-
-    $curl = curl_init();
-    curl_setopt_array($curl, [
-        CURLOPT_URL => $endpoint . '/create',
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 25,
         CURLOPT_CUSTOMREQUEST => 'POST',
         CURLOPT_HTTPHEADER => [
             'Content-Type: application/json',
             'Accept: application/json',
             'Authorization: Bearer ' . $api_key,
+            'X-API-KEY: ' . $api_key,
         ],
-        CURLOPT_POSTFIELDS => json_encode([
-            'amount' => intval($price),
-            'order_id' => $order_id,
-            'callback_url' => "https://$domainhosts/payment/iranpay4.php",
-        ], JSON_UNESCAPED_UNICODE),
+        CURLOPT_POSTFIELDS => json_encode($postData, JSON_UNESCAPED_UNICODE),
     ]);
 
     $response = curl_exec($curl);
@@ -857,7 +839,27 @@ function createPayiranpay4($price, $order_id)
         return ['success' => false, 'message' => 'iranpay4: gateway unreachable'];
     }
 
-    return json_decode($response, true) ?: ['success' => false, 'message' => 'iranpay4: bad response'];
+    $decoded = json_decode($response, true);
+    if (!is_array($decoded)) {
+        return ['success' => false, 'message' => 'iranpay4: bad response', 'raw' => $response];
+    }
+
+    $link = $decoded['payment_link']
+        ?? $decoded['link']
+        ?? $decoded['url']
+        ?? $decoded['payment_url']
+        ?? $decoded['data']['payment_url']
+        ?? $decoded['data']['link']
+        ?? $decoded['data']['url']
+        ?? $decoded['invoice_url']
+        ?? null;
+
+    if ($link) {
+        $decoded['success'] = true;
+        $decoded['payment_link'] = $link;
+    }
+
+    return $decoded;
 }
 
 function cubepay($order_id, $price, $customer_user_id)
