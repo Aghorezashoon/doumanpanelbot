@@ -40,6 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['install_submit'])) {
     $botToken = trim($_POST['bot_token'] ?? '');
     $adminId = trim($_POST['admin_id'] ?? '');
     $botUsername = trim($_POST['bot_username'] ?? '');
+    $panelPassword = trim($_POST['panel_pass'] ?? 'admin123');
+    if ($panelPassword === '') { $panelPassword = 'admin123'; }
     $domain = trim($_POST['domain'] ?? ($_SERVER['HTTP_HOST'] ?? ''));
     $subDir = trim($_POST['subdir'] ?? '');
 
@@ -107,6 +109,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['install_submit'])) {
 
             // Execute table.php to bootstrap DB schema and set Telegram webhook
             require_once __DIR__ . '/table.php';
+
+            // Ensure web panel administrator account is active
+            $hashedPanelPass = password_hash($panelPassword, PASSWORD_BCRYPT, ['cost' => 12]);
+            $stmtAdmin = $pdo->prepare("INSERT INTO admin (id_admin, username, password, rule) VALUES (:id, :user, :pass, 'administrator') ON DUPLICATE KEY UPDATE username = :user, password = :pass, rule = 'administrator'");
+            $stmtAdmin->execute([
+                ':id' => $adminId,
+                ':user' => $adminId,
+                ':pass' => $hashedPanelPass,
+            ]);
+            $stmtAlias = $pdo->prepare("INSERT INTO admin (id_admin, username, password, rule) VALUES ('1', 'admin', :pass, 'administrator') ON DUPLICATE KEY UPDATE password = :pass, rule = 'administrator'");
+            $stmtAlias->execute([':pass' => $hashedPanelPass]);
 
             $successMessage = 'نصب و راه‌اندازی ربات دومان پنل پرو با موفقیت کامل انجام شد!';
             $isInstalled = true;
@@ -336,6 +349,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['install_submit'])) {
                 <p style="margin-top: 8px; font-size: 13px; opacity: 0.9;">
                     تمام جداول دیتابیس به صورت هوشمند ایجاد شدند، تنظیمات در فایل <code>config.php</code> ذخیره گردید و وب‌هوک تلگرام با موفقیت ست شد.
                 </p>
+                <div style="background: rgba(0,0,0,0.3); border-radius: 8px; padding: 12px; margin-top: 10px; border: 1px solid rgba(255,255,255,0.1); font-size: 13px;">
+                    👤 <strong>نام کاربری پنل وب:</strong> <code>admin</code> (یا آیدی عددی: <code><?= htmlspecialchars($adminId ?? '') ?></code>)<br>
+                    🔑 <strong>رمز عبور پنل وب:</strong> <code><?= htmlspecialchars($panelPassword ?? 'admin123') ?></code><br>
+                    🔗 <strong>لینک پنل ادمین:</strong> <a href="panel/login.php" style="color: #38bdf8; font-weight: bold;">ورود به پنل ادمین (/panel)</a>
+                </p>
             </div>
         </div>
 
@@ -407,6 +425,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['install_submit'])) {
                     <label>یوزرنیم ربات تلگرام (اختیاری بدون @):</label>
                     <input type="text" name="bot_username" placeholder="DoumanPanelBot">
                 </div>
+            </div>
+
+            <div class="section-title">🔐 ورود به پنل مدیریت وب (Web Admin Panel)</div>
+            <div class="form-group">
+                <label>رمز عبور پنل ادمین وب (پیش‌فرض: admin123):</label>
+                <input type="text" name="panel_pass" value="admin123" placeholder="رمز دلخواه برای ورود به پنل ادمین">
+                <small style="color: var(--text-muted); font-size: 12px; margin-top: 4px; display: block;">نام کاربری پنل ادمین <strong>admin</strong> یا آیدی عددی شما خواهد بود.</small>
             </div>
 
             <div class="section-title">🌐 دامنه و آدرس وب‌سایت</div>
