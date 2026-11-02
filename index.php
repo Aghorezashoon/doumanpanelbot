@@ -5359,9 +5359,23 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
             sendmessage($from_id, $cubepayCardText, null, 'HTML');
         }
     } elseif ($datain == "iranpay4") {
+        $endpoint = abangatewayEndpoint();
+        $isHooshpay = ($endpoint !== null && (str_contains($endpoint, 'hooshpay.xyz') || str_contains($endpoint, '/m/')));
+
+        if ($isHooshpay) {
+            if ($user['Processing_value'] < 50000 || $user['Processing_value'] > 1500000) {
+                $err_amount = "⚠️ <b>محدودیت مبلغ درگاه هوش‌پی:</b>\n";
+                $err_amount .= "مبلغ پرداختی برای درگاه هوش‌پی باید بین <b>۵۰,۰۰۰</b> الی <b>۱,۵۰۰,۰۰۰</b> تومان باشد.\n\n";
+                $err_amount .= "مبلغ قابل پرداخت این فاکتور: <b>" . number_format($user['Processing_value']) . "</b> تومان است.\n";
+                $err_amount .= "<i>(می‌توانید با استفاده از «کیف پول ← افزایش موجودی» حساب خود را به میزان دلخواه شارژ کنید).</i>";
+                sendmessage($from_id, $err_amount, null, 'HTML');
+                return;
+            }
+        }
+
         $mainbalance = getPaySettingValue('minbalanceiranpay4', '0');
         $maxbalance = getPaySettingValue('maxbalanceiranpay4', '0');
-        if ($user['Processing_value'] < $mainbalance || $user['Processing_value'] > $maxbalance) {
+        if (($mainbalance > 0 && $user['Processing_value'] < $mainbalance) || ($maxbalance > 0 && $user['Processing_value'] > $maxbalance)) {
             $mainbalance = number_format($mainbalance);
             $maxbalance = number_format($maxbalance);
             sendmessage($from_id, strtr($textbotlang['users']['Balance']['depositRangePlisio'], ['{mainbalance}' => $mainbalance, '{maxbalance}' => $maxbalance]), null, 'HTML');
@@ -5394,8 +5408,15 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
 
         $pay = createPayiranpay4($user['Processing_value'], $randomString);
         if (empty($pay['success']) || empty($pay['payment_link'])) {
-            $text_error = json_encode($pay);
-            sendmessage($from_id, $textbotlang['users']['Balance']['errorLinkPayment'], $keyboard, 'HTML');
+            $text_error = json_encode($pay, JSON_UNESCAPED_UNICODE);
+            $err_detail = !empty($pay['error']) ? $pay['error'] : (!empty($pay['message']) ? $pay['message'] : (!empty($pay['detail']) ? $pay['detail'] : ''));
+            $user_err = "❌ <b>خطایی در ساخت لینک پرداخت رخ داده است</b>";
+            if (!empty($err_detail)) {
+                $user_err .= "\n\n⚠️ <b>علت خطا:</b>\n" . htmlspecialchars($err_detail);
+            } else {
+                $user_err .= "\nبرای رفع با پشتیبانی در ارتباط باشید.";
+            }
+            sendmessage($from_id, $user_err, $keyboard, 'HTML');
             step('home', $from_id);
             $ErrorsLinkPayment = sprintf($textbotlang['Admin']['reportgroup']['errorPaymentLink3'], $text_error, $from_id, $Payment_Method, $username);
             if (strlen($setting['Channel_Report']) > 0) {

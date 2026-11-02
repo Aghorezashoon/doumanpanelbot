@@ -834,8 +834,28 @@ function createPayiranpay4($price, $order_id)
         return ['success' => false, 'message' => 'iranpay4: key or endpoint is unset'];
     }
 
-    $callback_url = "https://$domainhosts/payment/iranpay4.php?order_id=" . urlencode((string) $order_id);
+    $price = intval($price);
     $endpointClean = rtrim($endpoint, '/');
+    $isHooshpay = (str_contains($endpointClean, 'hooshpay.xyz') || str_contains($endpointClean, '/m/'));
+
+    if ($isHooshpay) {
+        if ($price < 50000) {
+            return [
+                'success' => false,
+                'error' => 'مبلغ فاکتور کمتر از ۵۰,۰۰۰ تومان است. حداقل مبلغ درگاه هوش‌پی ۵۰,۰۰۰ تومان می‌باشد.',
+                'message' => 'مبلغ فاکتور کمتر از ۵۰,۰۰۰ تومان است. حداقل مبلغ درگاه هوش‌پی ۵۰,۰۰۰ تومان می‌باشد.'
+            ];
+        }
+        if ($price > 1500000) {
+            return [
+                'success' => false,
+                'error' => 'مبلغ فاکتور بیشتر از ۱,۵۰۰,۰۰۰ تومان است. سقف هر فاکتور درگاه هوش‌پی ۱,۵۰۰,۰۰۰ تومان می‌باشد.',
+                'message' => 'مبلغ فاکتور بیشتر از ۱,۵۰۰,۰۰۰ تومان است. حداکثر سقف هر فاکتور هوش‌پی ۱,۵۰۰,۰۰۰ تومان می‌باشد.'
+            ];
+        }
+    }
+
+    $callback_url = "https://$domainhosts/payment/iranpay4.php?order_id=" . urlencode((string) $order_id);
 
     // If endpoint is a HooshPay custom gateway (/m/<slug>), post directly to it!
     if (str_contains($endpointClean, '/m/')) {
@@ -851,7 +871,7 @@ function createPayiranpay4($price, $order_id)
     // HooshPay expects: api_key, amount, order_id in POST body
     $postData = [
         'api_key' => $api_key,
-        'amount' => intval($price),
+        'amount' => $price,
         'order_id' => (string) $order_id,
         'callback_url' => $callback_url,
         'return_url' => $callback_url,
@@ -878,13 +898,13 @@ function createPayiranpay4($price, $order_id)
     if ($response === false) {
         $err = curl_error($curl);
         error_log('createPayiranpay4 curl error: ' . $err);
-        return ['success' => false, 'message' => 'iranpay4: gateway unreachable: ' . $err];
+        return ['success' => false, 'message' => 'درگاه پرداخت در دسترس نیست: ' . $err];
     }
 
     $decoded = json_decode($response, true);
     if (!is_array($decoded)) {
         error_log('createPayiranpay4 bad response: ' . $response);
-        return ['success' => false, 'message' => 'iranpay4: bad response', 'raw' => $response];
+        return ['success' => false, 'message' => 'پاسخ نامعتبر از درگاه: ' . $response, 'raw' => $response];
     }
 
     // HooshPay returns { "url": "https://..." }
@@ -902,7 +922,17 @@ function createPayiranpay4($price, $order_id)
         $decoded['success'] = true;
         $decoded['payment_link'] = $link;
     } else {
-        error_log('createPayiranpay4 missing link in: ' . json_encode($decoded));
+        $decoded['success'] = false;
+        $rawError = $decoded['error'] ?? $decoded['detail'] ?? '';
+        if ($rawError === 'no_card_available') {
+            $decoded['error'] = 'در حال حاضر کارتی در سیستم هوش‌پی برای دریافت وجه در دسترس نیست (no_card_available). لطفاً از ربات هوش‌پی ثبت/فعال بودن کارت بانکی را بررسی کنید یا با پشتیبانی هوش‌پی در ارتباط باشید.';
+        } elseif ($rawError === 'unauthorized') {
+            $decoded['error'] = 'توکن درگاه هوش‌پی نامعتبر است (unauthorized). لطفاً توکن اختصاصی اتصال میرزا را در ربات بررسی فرمایید.';
+        }
+        if (empty($decoded['message'])) {
+            $decoded['message'] = $decoded['error'] ?? $decoded['detail'] ?? 'خطا در ایجاد فاکتور پرداخت';
+        }
+        error_log('createPayiranpay4 missing link in: ' . json_encode($decoded, JSON_UNESCAPED_UNICODE));
     }
 
     return $decoded;
