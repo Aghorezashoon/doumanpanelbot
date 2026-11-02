@@ -1753,45 +1753,45 @@ function addBackgroundImage($urlimage, $qrCodeResult, $backgroundPath)
 
 function checktelegramip()
 {
-    global ;
-    if (!empty() || defined('BYPASS_IP_CHECK')) {
+    global $bypass_ip_check;
+    if (!empty($bypass_ip_check) || defined('BYPASS_IP_CHECK')) {
         return true;
     }
 
-     = '';
-    if (!empty(['HTTP_CF_CONNECTING_IP'])) {
-         = ['HTTP_CF_CONNECTING_IP'];
-    } elseif (!empty(['HTTP_X_REAL_IP'])) {
-         = ['HTTP_X_REAL_IP'];
-    } elseif (!empty(['HTTP_X_FORWARDED_FOR'])) {
-         = explode(',', ['HTTP_X_FORWARDED_FOR']);
-         = trim([0]);
+    $clientIp = '';
+    if (!empty($_SERVER['HTTP_CF_CONNECTING_IP'])) {
+        $clientIp = $_SERVER['HTTP_CF_CONNECTING_IP'];
+    } elseif (!empty($_SERVER['HTTP_X_REAL_IP'])) {
+        $clientIp = $_SERVER['HTTP_X_REAL_IP'];
+    } elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+        $parts = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
+        $clientIp = trim($parts[0]);
     } else {
-         = ['REMOTE_ADDR'] ?? '';
+        $clientIp = $_SERVER['REMOTE_ADDR'] ?? '';
     }
 
-    if (!is_string() ||  === '') {
+    if (!is_string($clientIp) || $clientIp === '') {
         return false;
     }
 
-     = trim();
-    if (!filter_var(, FILTER_VALIDATE_IP)) {
+    $clientIp = trim($clientIp);
+    if (!filter_var($clientIp, FILTER_VALIDATE_IP)) {
         return false;
     }
 
     // Allow loopback / internal proxy
-    if (in_array(, ['127.0.0.1', '::1'])) {
+    if (in_array($clientIp, ['127.0.0.1', '::1'])) {
         return true;
     }
 
-     = [
+    $telegramRanges = [
         ['lower' => '149.154.160.0', 'upper' => '149.154.175.255'],
         ['lower' => '91.108.4.0', 'upper' => '91.108.7.255'],
         ['lower' => '2001:67c:4e8::', 'upper' => '2001:67c:4e8:ffff:ffff:ffff:ffff:ffff']
     ];
 
-    foreach ( as ) {
-        if (isClientIpInRange(, ['lower'], ['upper'])) {
+    foreach ($telegramRanges as $range) {
+        if (isClientIpInRange($clientIp, $range['lower'], $range['upper'])) {
             return true;
         }
     }
