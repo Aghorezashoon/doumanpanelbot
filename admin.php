@@ -764,7 +764,7 @@ if ($datain == "paygwback") {
 } elseif ($text == $textbotlang['Admin']['btnKeyboard']['addPanel'] && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['Admin']['managepanel']['Inbound']['getPanelType'], $keyboardtypepanel, 'HTML');
 } elseif (preg_match('/^typepanel#(.+)$/', $datain, $dataget) && $adminrulecheck['rule'] == "administrator") {
-    if (!in_array($dataget[1], ["marzban", "marzneshin", "pasarguard", "douman_agent", "mirza_agent", "x-ui_single", "Manualsale", "hiddify", "WGDashboard", "ibsng", "mikrotik", "rebecca", "nexora", "wg_mate"], true)) {
+    if (!in_array($dataget[1], ["marzban", "marzneshin", "pasarguard", "douman_agent", "mirza_agent", "x-ui_single", "Manualsale", "hiddify", "WGDashboard", "ibsng", "mikrotik", "rebecca", "nexora", "wg_mate", "solidlayer"], true)) {
         return;
     }
     deletemessage($from_id, $message_id);
@@ -803,7 +803,19 @@ if ($datain == "paygwback") {
     }
     savedata("save", "url_panel", $text);
     $paneltype = json_decode($user['Processing_value'], true)['type'];
-    if ($paneltype == "hiddify") {
+    if ($paneltype == "solidlayer") {
+        $btnAuth = json_encode([
+            'inline_keyboard' => [
+                [['text' => "🔑 اتصال با توکن (API Key)", 'callback_data' => "solidlayer_auth#token"]],
+                [['text' => "👤 اتصال با نام‌کاربری و رمز عبور", 'callback_data' => "solidlayer_auth#userpass"]],
+            ]
+        ]);
+        sendmessage($from_id, "🔐 لطفاً نحوه احراز هویت پنل SolidLayer را انتخاب کنید:
+
+۱. <b>API Token:</b> اتصال مستفیم با کلید اختصاصی API Key
+۲. <b>نام‌کاربری و رمز عبور:</b> دریافت خود�کار توکن JWT با اکانت ادمین", $btnAuth, 'HTML');
+        return;
+    } elseif ($paneltype == "hiddify") {
         savedata("save", "username", "null");
         savedata("save", "password", "null");
         finishAddPanel();
@@ -822,6 +834,16 @@ if ($datain == "paygwback") {
 } elseif ($user['step'] == "add_password_panel") {
     savedata("save", "password", trim($text));
     finishAddPanel();
+} elseif (preg_match('/^solidlayer_auth#(token|userpass)$/', $datain, $matchAuth) && $adminrulecheck['rule'] == "administrator") {
+    deletemessage($from_id, $message_id);
+    if ($matchAuth[1] == "token") {
+        savedata("save", "username", "token");
+        sendmessage($from_id, "🔑 لطفاً <b>API Key / توکن</b> پنل SolidLayer را وارد کنید:", $backadmin, 'HTML');
+        step('add_password_panel', $from_id);
+    } else {
+        sendmessage($from_id, $textbotlang['Admin']['managepanel']['usernameSet'], $backadmin, 'HTML');
+        step('add_username_panel', $from_id);
+    }
 }
 //_____________________[ message ]____________________________//
 elseif ($datain == "systemsms") {
@@ -2607,6 +2629,27 @@ elseif ($datain == "systemsms") {
 
             $message = strtr($text_x_ui, $replace);
             sendmessage($from_id, $message, $panelOptions['x-ui_single'], 'HTML');
+        }
+    } elseif ($marzban_list_get['type'] == "solidlayer") {
+        $status_server = status_server_solidlayer($marzban_list_get);
+        if (!empty($status_server['error']) || (isset($status_server['status']) && $status_server['status'] >= 400)) {
+            $err = $status_server['error'] ?? ('HTTP ' . ($status_server['status'] ?? 0));
+            sendmessage($from_id, "❌ خطا در برقراری ارتباط با پنل SolidLayer:
+" . htmlspecialchars($err), $panelOptions['solidlayer'], 'HTML');
+        } else {
+            $adminInfo = $status_server['data'] ?? [];
+            $admUsername = $adminInfo['username'] ?? '-';
+            $admRole = $adminInfo['role'] ?? '-';
+            $admStatus = !empty($adminInfo['enabled']) ? "فعال ✅" : "غیرفعال ❌";
+            $msg = "🟢 <b>وضعیت اتصال پنل SolidLayer:</b> برقرار است
+
+";
+            $msg .= "👤 <b>نام کاربری ادمین:</b> <code>{$admUsername}</code>
+";
+            $msg .= "🎭 <b>سطح دسترسی:</b> <code>{$admRole}</code>
+";
+            $msg .= "⚡ <b>وضعیت اکانت:</b> {$admStatus}";
+            sendmessage($from_id, $msg, $panelOptions['solidlayer'], 'HTML');
         }
     } elseif (in_array($marzban_list_get['type'], ["douman_agent", "mirza_agent"], true)) {
         sendmessage($from_id, $textbotlang['users']['selectoption'], $panelOptions['douman_agent'] ?? $panelOptions['mirza_agent'], 'HTML');

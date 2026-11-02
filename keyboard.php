@@ -1080,6 +1080,18 @@ $panelOptionRows = [
 $panelOptionRows['mikrotik'] = $panelOptionRows['ibsng'];
 $panelOptionRows['nexora'] = $panelOptionRows['rebecca'];
 $panelOptionRows['wg_mate'] = $panelOptionRows['rebecca'];
+$panelOptionRows['solidlayer'] = [
+    ['manualCreateConfig'],
+    ['panelName', 'deletePanel'],
+    ['editPassword', 'editUsername'],
+    ['editPanelUrl', 'subLinkDomain'],
+    ['renewalMethod', 'usernameMethod'],
+    ['accountCreateLimit', 'changeUserGroup'],
+    $panelTestRow,
+    ...$panelPriceRows,
+    ['changeLocationPrice'],
+    ...$panelLimitRows
+];
 $panelOptions = [];
 foreach ($panelOptionRows as $panelType => $panelRows) {
     $panelKeyboardRows = [[['text' => $textbotlang['keyboard']['panelFeatureStatus']]]];
@@ -1179,7 +1191,8 @@ $keyboardtypepanel = json_encode([
             ['text' => "Nexora", 'callback_data' => 'typepanel#nexora']
         ],
         [
-            ['text' => "WG-Mate", 'callback_data' => 'typepanel#wg_mate']
+            ['text' => "WG-Mate", 'callback_data' => 'typepanel#wg_mate'],
+            ['text' => "SolidLayer (سولیدلایر)", 'callback_data' => 'typepanel#solidlayer']
         ],
         [
             ['text' => $textbotlang['Admin']['backAdminBtn'], 'callback_data' => 'admin']

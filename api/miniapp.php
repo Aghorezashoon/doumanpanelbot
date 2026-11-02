@@ -227,20 +227,19 @@ function mini_service(array $data, string $method): void
         $used_Traffic = $used_traffic_bytes / pow(1024, 3);
         $remaining_traffic = $remaining_traffic_bytes / pow(1024, 3);
         $config = [];
-        if (in_array($panel['type'], ['marzban', 'marzneshin', 'x-ui_single', 'hiddify'])) {
-            if ($panel['sublink'] == "onsublink" && !empty($DataUserOut['subscription_url'])) {
-                $config[] = [
-                    'type' => "link",
-                    'value' => $DataUserOut['subscription_url']
-                ];
-            }
-            if ($panel['config'] == "onconfig" && !empty($DataUserOut['links'])) {
-                $config[] = [
-                    'type' => "config",
-                    'value' => $DataUserOut['links']
-                ];
-            }
-        } elseif ($panel['type'] == "WGDashboard") {
+        if (!empty($DataUserOut['subscription_url'])) {
+            $config[] = [
+                'type' => "link",
+                'value' => $DataUserOut['subscription_url']
+            ];
+        }
+        if (!empty($DataUserOut['links'])) {
+            $config[] = [
+                'type' => "config",
+                'value' => $DataUserOut['links']
+            ];
+        }
+        if ($panel['type'] == "WGDashboard") {
             $config[] = [
                 'type' => "file",
                 'value' => $DataUserOut['subscription_url'] ?? '',
@@ -1172,6 +1171,8 @@ function mini_purchase(array $data, string $method): void
             'reply_markup' => $Response
         ]);
     }
+    $subscription_url = $output_config_link ?: ($dataoutput['subscription_url'] ?? "");
+    $configs = $dataoutput['configs'] ?? [];
     echo json_encode(array(
         'success' => true,
         "message" => "ok",
@@ -1180,15 +1181,101 @@ function mini_purchase(array $data, string $method): void
             'id' => $randomString,
             "username" => $username_ac,
             "status" => "active",
-            "expire" => $datetimestep
+            "expire" => $datetimestep,
+            "subscription_url" => $subscription_url,
+            "configs" => $configs
         )
     ));
+}
+
+function mini_wallet_info(array $data, string $method): void
+{
+    global $pdo, $tokencheck;
+    $user_info = select("user", "*", "token", $tokencheck, "select");
+    if (!$user_info) {
+        http_response_code(404);
+        echo json_encode(['status' => false, 'msg' => 'کاربر یافت نشد']);
+        return;
+    }
+
+    $min_charge = intval(getPaySettingValue('minbalanceiranpay4', '50000'));
+    if ($min_charge < 50000) { $min_charge = 50000; }
+    $max_charge = intval(getPaySettingValue('maxbalanceiranpay4', '1500000'));
+    if ($max_charge <= 0) { $max_charge = 1500000; }
+
+    echo json_encode([
+        'status' => true,
+        'msg' => 'ok',
+        'obj' => [
+            'balance' => intval($user_info['Balance']),
+            'min_charge' => $min_charge,
+            'max_charge' => $max_charge,
+            'gateway' => 'hooshpay',
+            'gateway_name' => 'هوش‌پی'
+        ]
+    ]);
+}
+
+function mini_charge_wallet(array $data, string $method): void
+{
+    global $pdo, $tokencheck;
+    if ($method !== "POST") {
+        echo json_encode(['status' => false, 'msg' => 'Method invalid; must be POST']);
+        return;
+    }
+
+    $user_info = select("user", "*", "token", $tokencheck, "select");
+    if (!$user_info) {
+        http_response_code(404);
+        echo json_encode(['status' => false, 'msg' => 'کاربر یافت نشد']);
+        return;
+    }
+
+    $amount = isset($data['amount']) ? intval($data['amount']) : 0;
+    if ($amount < 50000 || $amount > 1500000) {
+        http_response_code(400);
+        echo json_encode([
+            'status' => false,
+            'msg' => 'مبلغ شارژ برای درگاه هوش‌پی باید بین ۵۰,۰۰۰ الی ۱,۵۰۰,۰۰۰ تومان باشد.'
+        ]);
+        return;
+    }
+
+    $randomString = bin2hex(random_bytes(5));
+    $dateacc = date('Y/m/d H:i:s');
+    $Payment_Method = "AbanGateway";
+
+    $stmt = $pdo->prepare("INSERT INTO Payment_report (id_user, id_order, time, price, payment_Status, Payment_Method) VALUES (?, ?, ?, ?, ?, ?)");
+    $stmt->execute([$user_info['id'], $randomString, $dateacc, $amount, "Unpaid", $Payment_Method]);
+
+    $pay = createPayiranpay4($amount, $randomString);
+    if (empty($pay['success']) || empty($pay['payment_link'])) {
+        $err = !empty($pay['error']) ? $pay['error'] : (!empty($pay['message']) ? $pay['message'] : 'خطا در ساخت لینک پرداخت هوش‌پی');
+        http_response_code(500);
+        echo json_encode([
+            'status' => false,
+            'msg' => $err
+        ]);
+        return;
+    }
+
+    echo json_encode([
+        'status' => true,
+        'msg' => 'ok',
+        'obj' => [
+            'order_id' => $randomString,
+            'amount' => $amount,
+            'payment_url' => $pay['payment_link']
+        ]
+    ]);
 }
 
 match ($action) {
     'invoices' => mini_invoices($data, $method),
     'service' => mini_service($data, $method),
     'user_info' => mini_user_info($data, $method),
+    'wallet_info' => mini_wallet_info($data, $method),
+    'charge_wallet' => mini_charge_wallet($data, $method),
     'countries' => mini_countries($data, $method),
     'categories' => mini_categories($data, $method),
     'time_ranges' => mini_time_ranges($data, $method),
