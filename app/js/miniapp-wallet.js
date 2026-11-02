@@ -559,18 +559,23 @@
         }
     }
 
-    // Multi-user pricing calculation (+150k for user 2, +150k for user 3, +100k for user 4, +100k for user 5)
-    function calcUserPrice(basePrice, userCount) {
+    // Multi-user pricing calculation with per-product custom extras support
+    function calcUserPrice(basePrice, userCount, customExtras) {
         basePrice = Number(basePrice) || 0;
         userCount = parseInt(userCount, 10) || 1;
         if (userCount <= 1) return basePrice;
         let extra = 0;
-        const extraUsers = userCount - 1;
-        for (let i = 1; i <= extraUsers; i++) {
-            if (i <= 2) {
-                extra += 150000;
+        for (let u = 2; u <= userCount; u++) {
+            if (customExtras && customExtras[u] !== undefined && !isNaN(customExtras[u])) {
+                extra += Number(customExtras[u]);
+            } else if (customExtras && customExtras[String(u)] !== undefined && !isNaN(customExtras[String(u)])) {
+                extra += Number(customExtras[String(u)]);
             } else {
-                extra += 100000;
+                if (u <= 3) {
+                    extra += 150000;
+                } else {
+                    extra += 100000;
+                }
             }
         }
         return basePrice + extra;
@@ -655,12 +660,24 @@
         const currentPriceVal = parseInt(rawText, 10);
         if (!currentPriceVal || isNaN(currentPriceVal)) return;
 
-        // Look up product in cache to check limit_ip
+        // Look up product in cache to check limit_ip and custom extra user prices
         const cachedProduct = (window.__douman_services_cache || []).find(p => p.name === serviceName);
         const prodLimit = cachedProduct ? parseInt(cachedProduct.limit_ip, 10) : 1;
+        const customExtras = (cachedProduct && cachedProduct.extra_user_prices) ? cachedProduct.extra_user_prices : null;
 
         window.__current_base_price = currentPriceVal;
         window.__current_service_name = serviceName;
+        window.__current_custom_extras = customExtras;
+
+        const extra2 = (customExtras && customExtras['2'] !== undefined) ? Number(customExtras['2']) : 150000;
+        const extra3 = (customExtras && customExtras['3'] !== undefined) ? Number(customExtras['3']) : 100000;
+        const extra4 = (customExtras && customExtras['4'] !== undefined) ? Number(customExtras['4']) : 100000;
+        const extra5 = (customExtras && customExtras['5'] !== undefined) ? Number(customExtras['5']) : 100000;
+
+        const sum2 = extra2;
+        const sum3 = sum2 + extra3;
+        const sum4 = sum3 + extra4;
+        const sum5 = sum4 + extra5;
 
         const container = document.createElement('div');
         container.id = 'douman-multiuser-card';
@@ -728,7 +745,7 @@
                         text-align: center;
                     ">
                         <div style="font-weight: 800; font-size: 13px;">۲</div>
-                        <div style="font-size: 9px; color: #10b981; margin-top: 2px;">+۱۵۰ ت</div>
+                        <div style="font-size: 9px; color: #10b981; margin-top: 2px;">+${formatMoney(sum2)} ت</div>
                     </button>
                     <button type="button" class="douman-user-pill" data-u="3" style="
                         background: rgba(255, 255, 255, 0.04);
@@ -740,7 +757,7 @@
                         text-align: center;
                     ">
                         <div style="font-weight: 800; font-size: 13px;">۳</div>
-                        <div style="font-size: 9px; color: #10b981; margin-top: 2px;">+۳۰۰ ت</div>
+                        <div style="font-size: 9px; color: #10b981; margin-top: 2px;">+${formatMoney(sum3)} ت</div>
                     </button>
                     <button type="button" class="douman-user-pill" data-u="4" style="
                         background: rgba(255, 255, 255, 0.04);
@@ -752,7 +769,7 @@
                         text-align: center;
                     ">
                         <div style="font-weight: 800; font-size: 13px;">۴</div>
-                        <div style="font-size: 9px; color: #10b981; margin-top: 2px;">+۴۰۰ ت</div>
+                        <div style="font-size: 9px; color: #10b981; margin-top: 2px;">+${formatMoney(sum4)} ت</div>
                     </button>
                     <button type="button" class="douman-user-pill" data-u="5" style="
                         background: rgba(255, 255, 255, 0.04);
@@ -764,7 +781,7 @@
                         text-align: center;
                     ">
                         <div style="font-weight: 800; font-size: 13px;">۵</div>
-                        <div style="font-size: 9px; color: #10b981; margin-top: 2px;">+۵۰۰ ت</div>
+                        <div style="font-size: 9px; color: #10b981; margin-top: 2px;">+${formatMoney(sum5)} ت</div>
                     </button>
                 </div>
                 <div style="font-size: 11px; color: #71717a; margin-top: 8px; text-align: center;">
@@ -793,8 +810,8 @@
                         badge.textContent = chosen + ' کاربره';
                     }
 
-                    // Update total price text in order summary card
-                    const newTotal = calcUserPrice(window.__current_base_price, chosen);
+                    // Update total price text in order summary card using product custom extras
+                    const newTotal = calcUserPrice(window.__current_base_price, chosen, window.__current_custom_extras);
                     priceEl.textContent = formatMoney(newTotal) + ' تومان';
                 });
             });

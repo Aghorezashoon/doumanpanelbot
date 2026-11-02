@@ -3872,11 +3872,12 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         return;
     }
     $base_price = intval($info_product['price_product']);
-    $p1 = number_format(calculateUserLimitPrice($base_price, 1));
-    $p2 = number_format(calculateUserLimitPrice($base_price, 2));
-    $p3 = number_format(calculateUserLimitPrice($base_price, 3));
-    $p4 = number_format(calculateUserLimitPrice($base_price, 4));
-    $p5 = number_format(calculateUserLimitPrice($base_price, 5));
+    $customExtras = $info_product['extra_user_prices'] ?? null;
+    $p1 = number_format(calculateUserLimitPrice($base_price, 1, $customExtras));
+    $p2 = number_format(calculateUserLimitPrice($base_price, 2, $customExtras));
+    $p3 = number_format(calculateUserLimitPrice($base_price, 3, $customExtras));
+    $p4 = number_format(calculateUserLimitPrice($base_price, 4, $customExtras));
+    $p5 = number_format(calculateUserLimitPrice($base_price, 5, $customExtras));
 
     $userlimit_keyboard = json_encode([
         'inline_keyboard' => [
@@ -3986,7 +3987,7 @@ process_preinvoice_label:
     }
     $chosen_limit = intval($userdate['user_limit'] ?? $info_product['limit_ip'] ?? 1);
     if ($chosen_limit <= 0) { $chosen_limit = 1; }
-    $info_product['price_product'] = calculateUserLimitPrice($info_product['price_product'], $chosen_limit);
+    $info_product['price_product'] = calculateUserLimitPrice($info_product['price_product'], $chosen_limit, $info_product['extra_user_prices'] ?? null);
     if (intval($user['pricediscount']) != 0) {
         $resultper = ($info_product['price_product'] * $user['pricediscount']) / 100;
         $info_product['price_product'] = $info_product['price_product'] - $resultper;
@@ -4123,12 +4124,12 @@ process_preinvoice_label:
         }
         $chosen_limit = intval($userdate['user_limit'] ?? $info_product['limit_ip'] ?? 1);
         if ($chosen_limit <= 0) { $chosen_limit = 1; }
-        $calc_base = calculateUserLimitPrice($info_product['price_product'], $chosen_limit);
+        $calc_base = calculateUserLimitPrice($info_product['price_product'], $chosen_limit, $info_product['extra_user_prices'] ?? null);
         $priceproduct = max(0, round($calc_base - ($discountcode['price'] / 100) * $calc_base));
     } else {
         $chosen_limit = intval($userdate['user_limit'] ?? $info_product['limit_ip'] ?? 1);
         if ($chosen_limit <= 0) { $chosen_limit = 1; }
-        $priceproduct = calculateUserLimitPrice($info_product['price_product'], $chosen_limit);
+        $priceproduct = calculateUserLimitPrice($info_product['price_product'], $chosen_limit, $info_product['extra_user_prices'] ?? null);
     }
     cancelPendingGatewayOrders($from_id);
     $username_ac = strtolower($user['Processing_value_tow']);

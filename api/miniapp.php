@@ -717,7 +717,8 @@ function mini_services(array $data, string $method): void
                 'category_id' => $selected_category_id,
                 'country_id' => $panel['code_panel'],
                 'time_range_id' => $result['Service_time'],
-                'limit_ip' => isset($result['limit_ip']) ? intval($result['limit_ip']) : 1
+                'limit_ip' => isset($result['limit_ip']) ? intval($result['limit_ip']) : 1,
+                'extra_user_prices' => json_decode($result['extra_user_prices'] ?? '{}', true)
 
             ];
         }
@@ -955,7 +956,7 @@ function mini_purchase(array $data, string $method): void
             $user_limit = ($prod_limit > 0 ? $prod_limit : 1);
         }
         if ($user_limit > 1) {
-            $product['price_product'] = calculateUserLimitPrice($product['price_product'], $user_limit);
+            $product['price_product'] = calculateUserLimitPrice($product['price_product'], $user_limit, $product['extra_user_prices'] ?? null);
         }
     }
     $price_product = $product['price_product'];

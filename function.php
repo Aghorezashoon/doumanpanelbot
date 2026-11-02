@@ -938,20 +938,30 @@ function createPayiranpay4($price, $order_id)
     return $decoded;
 }
 
-function calculateUserLimitPrice($basePrice, $userCount)
+function calculateUserLimitPrice($basePrice, $userCount, $customExtraPrices = null)
 {
     $basePrice = intval($basePrice);
     $userCount = intval($userCount);
     if ($userCount <= 1) {
         return $basePrice;
     }
-    $extraUsers = $userCount - 1;
+
+    if (is_string($customExtraPrices) && !empty($customExtraPrices)) {
+        $customExtraPrices = json_decode($customExtraPrices, true);
+    }
+
     $extra = 0;
-    for ($i = 1; $i <= $extraUsers; $i++) {
-        if ($i <= 2) {
-            $extra += 150000;
+    for ($u = 2; $u <= $userCount; $u++) {
+        if (is_array($customExtraPrices) && isset($customExtraPrices[$u]) && is_numeric($customExtraPrices[$u])) {
+            $extra += intval($customExtraPrices[$u]);
+        } elseif (is_array($customExtraPrices) && isset($customExtraPrices[(string)$u]) && is_numeric($customExtraPrices[(string)$u])) {
+            $extra += intval($customExtraPrices[(string)$u]);
         } else {
-            $extra += 100000;
+            if ($u <= 3) {
+                $extra += 150000;
+            } else {
+                $extra += 100000;
+            }
         }
     }
     return $basePrice + $extra;

@@ -18,11 +18,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add')
   }
   $code = bin2hex(random_bytes(2));
   $limit_ip = isset($_POST['limit_ip']) ? (int) $_POST['limit_ip'] : 1;
+  $extra_user_prices = json_encode([
+    '2' => (int) ($_POST['extra_user_2'] ?? 150000),
+    '3' => (int) ($_POST['extra_user_3'] ?? 100000),
+    '4' => (int) ($_POST['extra_user_4'] ?? 100000),
+    '5' => (int) ($_POST['extra_user_5'] ?? 100000),
+  ]);
   try {
     db_query(
       $pdo,
-      "INSERT INTO product (name_product,code_product,price_product,Volume_constraint,Service_time,Location,agent,data_limit_reset,note,category,hide_panel,one_buy_status,limit_ip) VALUES (?,?,?,?,?,?,?,'no_reset',?,?,'{}','0',?)",
-      [$name, $code, (int) ($_POST['price_product'] ?? 0), (int) ($_POST['volume_product'] ?? 0), (int) ($_POST['time_product'] ?? 0), $_POST['namepanel'] ?? '', $_POST['agent_product'] ?? '', $_POST['note_product'] ?? '', $_POST['category_product'] ?? '', $limit_ip]
+      "INSERT INTO product (name_product,code_product,price_product,Volume_constraint,Service_time,Location,agent,data_limit_reset,note,category,hide_panel,one_buy_status,limit_ip,extra_user_prices) VALUES (?,?,?,?,?,?,?,'no_reset',?,?,'{}','0',?,?)",
+      [$name, $code, (int) ($_POST['price_product'] ?? 0), (int) ($_POST['volume_product'] ?? 0), (int) ($_POST['time_product'] ?? 0), $_POST['namepanel'] ?? '', $_POST['agent_product'] ?? '', $_POST['note_product'] ?? '', $_POST['category_product'] ?? '', $limit_ip, $extra_user_prices]
     );
     db_query($pdo, "UPDATE product SET display_order = id WHERE id = ?", [$pdo->lastInsertId()]);
     flash('success', $textbotlang['panel']['productAddedPrefix'] . $name . $textbotlang['panel']['productAddedSuffix']);
@@ -41,10 +47,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit'
     try {
       $pdo->beginTransaction();
       $limit_ip = isset($_POST['limit_ip']) ? (int) $_POST['limit_ip'] : 1;
+      $extra_user_prices = json_encode([
+        '2' => (int) ($_POST['extra_user_2'] ?? 150000),
+        '3' => (int) ($_POST['extra_user_3'] ?? 100000),
+        '4' => (int) ($_POST['extra_user_4'] ?? 100000),
+        '5' => (int) ($_POST['extra_user_5'] ?? 100000),
+      ]);
       db_query(
         $pdo,
-        "UPDATE product SET name_product=?,price_product=?,Volume_constraint=?,Service_time=?,Location=?,agent=?,note=?,category=?,limit_ip=? WHERE id=?",
-        [$name, (int) ($_POST['price_product'] ?? 0), (int) ($_POST['volume_product'] ?? 0), (int) ($_POST['time_product'] ?? 0), $_POST['namepanel'] ?? '', $_POST['agent_product'] ?? '', $_POST['note_product'] ?? '', $_POST['category_product'] ?? '', $limit_ip, $pid]
+        "UPDATE product SET name_product=?,price_product=?,Volume_constraint=?,Service_time=?,Location=?,agent=?,note=?,category=?,limit_ip=?,extra_user_prices=? WHERE id=?",
+        [$name, (int) ($_POST['price_product'] ?? 0), (int) ($_POST['volume_product'] ?? 0), (int) ($_POST['time_product'] ?? 0), $_POST['namepanel'] ?? '', $_POST['agent_product'] ?? '', $_POST['note_product'] ?? '', $_POST['category_product'] ?? '', $limit_ip, $extra_user_prices, $pid]
       );
       if (isset($_POST['position'])) {
         move_display_order($pdo, 'product', $pid, (int) $_POST['position']);
@@ -235,7 +247,7 @@ include __DIR__ . '/inc/layout_head.php';
           </div>
           <div class="field">
             <label>تعداد کاربر (محدودیت IP)</label>
-            <select name="limit_ip" class="select" id="add_limit_ip">
+            <select name="limit_ip" class="select" id="add_limit_ip" onchange="updateAddExtraPricesVisibility()">
               <option value="0">بدون محدودیت کاربر (نامحدود)</option>
               <option value="1" selected>۱ کاربره (پیش‌فرض)</option>
               <option value="2">۲ کاربره</option>
@@ -244,6 +256,32 @@ include __DIR__ . '/inc/layout_head.php';
               <option value="5">۵ کاربره</option>
               <option value="-1">انتخاب توسط مشتری (۱ تا ۵ کاربره با افزایش تعرفه)</option>
             </select>
+          </div>
+          <div class="field full" id="add_extra_prices_wrap" style="display:none;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:6px">
+            <div style="font-weight:600;font-size:0.85rem;margin-bottom:8px;color:var(--text);display:flex;align-items:center;gap:6px">
+              <span><?= icon('users', 14) ?> تعرفه هر کاربر اضافه (تومان به قیمت پایه)</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px">
+              <div class="field" style="margin:0">
+                <label style="font-size:0.75rem">کاربر دوم (+۱)</label>
+                <input type="number" name="extra_user_2" id="add_extra_user_2" class="input" value="150000" min="0" step="1000" placeholder="150,000">
+              </div>
+              <div class="field" style="margin:0">
+                <label style="font-size:0.75rem">کاربر سوم (+۲)</label>
+                <input type="number" name="extra_user_3" id="add_extra_user_3" class="input" value="100000" min="0" step="1000" placeholder="100,000">
+              </div>
+              <div class="field" style="margin:0">
+                <label style="font-size:0.75rem">کاربر چهارم (+۳)</label>
+                <input type="number" name="extra_user_4" id="add_extra_user_4" class="input" value="100000" min="0" step="1000" placeholder="100,000">
+              </div>
+              <div class="field" style="margin:0">
+                <label style="font-size:0.75rem">کاربر پنجم (+۴)</label>
+                <input type="number" name="extra_user_5" id="add_extra_user_5" class="input" value="100000" min="0" step="1000" placeholder="100,000">
+              </div>
+            </div>
+            <div style="font-size:0.72rem;color:var(--mute);margin-top:6px">
+              هنگام انتخاب تعداد کاربر توسط مشتری، این مبلغ به ازای هر کاربر اضافه محاسبه و اعمال می‌شود.
+            </div>
           </div>
           <div class="field full">
             <label><?= $textbotlang['panel']['productColDescription'] ?></label>
@@ -322,7 +360,7 @@ include __DIR__ . '/inc/layout_head.php';
           </div>
           <div class="field">
             <label>تعداد کاربر (محدودیت IP)</label>
-            <select name="limit_ip" class="select" id="edit_limit_ip">
+            <select name="limit_ip" class="select" id="edit_limit_ip" onchange="updateEditExtraPricesVisibility()">
               <option value="0">بدون محدودیت کاربر (نامحدود)</option>
               <option value="1">۱ کاربره</option>
               <option value="2">۲ کاربره</option>
@@ -331,6 +369,32 @@ include __DIR__ . '/inc/layout_head.php';
               <option value="5">۵ کاربره</option>
               <option value="-1">انتخاب توسط مشتری (۱ تا ۵ کاربره با افزایش تعرفه)</option>
             </select>
+          </div>
+          <div class="field full" id="edit_extra_prices_wrap" style="display:none;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:6px">
+            <div style="font-weight:600;font-size:0.85rem;margin-bottom:8px;color:var(--text);display:flex;align-items:center;gap:6px">
+              <span><?= icon('users', 14) ?> تعرفه هر کاربر اضافه (تومان به قیمت پایه)</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px">
+              <div class="field" style="margin:0">
+                <label style="font-size:0.75rem">کاربر دوم (+۱)</label>
+                <input type="number" name="extra_user_2" id="edit_extra_user_2" class="input" value="150000" min="0" step="1000" placeholder="150,000">
+              </div>
+              <div class="field" style="margin:0">
+                <label style="font-size:0.75rem">کاربر سوم (+۲)</label>
+                <input type="number" name="extra_user_3" id="edit_extra_user_3" class="input" value="100000" min="0" step="1000" placeholder="100,000">
+              </div>
+              <div class="field" style="margin:0">
+                <label style="font-size:0.75rem">کاربر چهارم (+۳)</label>
+                <input type="number" name="extra_user_4" id="edit_extra_user_4" class="input" value="100000" min="0" step="1000" placeholder="100,000">
+              </div>
+              <div class="field" style="margin:0">
+                <label style="font-size:0.75rem">کاربر پنجم (+۴)</label>
+                <input type="number" name="extra_user_5" id="edit_extra_user_5" class="input" value="100000" min="0" step="1000" placeholder="100,000">
+              </div>
+            </div>
+            <div style="font-size:0.72rem;color:var(--mute);margin-top:6px">
+              هنگام انتخاب تعداد کاربر توسط مشتری، این مبلغ به ازای هر کاربر اضافه محاسبه و اعمال می‌شود.
+            </div>
           </div>
           <div class="field full">
             <label><?= $textbotlang['panel']['productUnlimitedLabel'] ?></label>

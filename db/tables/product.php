@@ -19,7 +19,8 @@ return [
         hide_panel TEXT NOT NULL,
         status_product varchar(20) NOT NULL DEFAULT 'active',
         display_order INT NOT NULL DEFAULT 0,
-        limit_ip INT(11) NOT NULL DEFAULT 1
+        limit_ip INT(11) NOT NULL DEFAULT 1,
+        extra_user_prices TEXT NULL
         SQL,
     'columns' => [
         ['code_product', null, 'varchar(50)'],
@@ -35,5 +36,6 @@ return [
         ['status_product', 'active', "VARCHAR(20) NOT NULL DEFAULT 'active'"],
         ['display_order', null, 'INT NOT NULL DEFAULT 0'],
         ['limit_ip', '1', 'INT(11) NOT NULL DEFAULT 1'],
+        ['extra_user_prices', '{}', 'TEXT NULL'],
     ],
 ];
