@@ -8623,6 +8623,34 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
     }
     $Bot_Status = json_encode($Bot_Status);
     Editmessagetext($from_id, $message_id, $textbotlang['Admin']['Status']['botTitle'], $Bot_Status);
+} elseif (($isGatewayOptionClick && ($gatewayOption[1] ?? '') == "starPrice") || $text == "⭐ قیمت استارز تلگرام" || $datain == "paygwopt-starPrice" || $text == "/starprice") {
+    $curStarPrice = intval(select("PaySetting", "ValuePay", "NamePay", "price_per_star", "select")['ValuePay'] ?? 0);
+    $priceDisplay = $curStarPrice > 0 ? number_format($curStarPrice) . " تومان" : "خودکار (بر اساس نرخ روز دلار)";
+    $prompt = "⭐ <b>تنظیم قیمت هر عدد استارز تلگرام (Telegram Stars)</b>\n\n"
+        . "🔹 نرخ فعلی هر استارز: <b>{$priceDisplay}</b>\n\n"
+        . "لطفاً قیمت جدید هر ۱ عدد استارز را به <b>تومان</b> ارسال فرمایید:\n"
+        . "مثال: <code>1500</code> یا <code>1400</code>\n\n"
+        . "💡 <i>نکته: در صورتی که می‌خواهید قیمت به صورت خودکار طبق نرخ لحظه‌ای دلار محاسبه شود، عدد <code>0</code> را ارسال نمایید.</i>";
+    sendmessage($from_id, $prompt, $backadmin, 'HTML');
+    step("get_star_price", $from_id);
+} elseif ($user['step'] == "get_star_price") {
+    if (!ctype_digit($text)) {
+        sendmessage($from_id, $textbotlang['common']['invalidInput'], $backadmin, 'HTML');
+        return;
+    }
+    $price = intval($text);
+    $check_exist = select("PaySetting", "*", "NamePay", "price_per_star", "select");
+    if ($check_exist) {
+        update("PaySetting", "ValuePay", strval($price), "NamePay", "price_per_star");
+    } else {
+        $stmt = $pdo->prepare("INSERT INTO PaySetting (NamePay, ValuePay) VALUES ('price_per_star', ?)");
+        $stmt->execute([strval($price)]);
+    }
+    step("home", $from_id);
+    $successText = $price > 0 
+        ? "✅ قیمت هر استارز با موفقیت به <b>" . number_format($price) . " تومان</b> تنظیم گردید."
+        : "✅ قیمت هر استارز به حالت <b>محاسبه خودکار طبق نرخ روز دلار</b> تنظیم گردید.";
+    sendmessage($from_id, $successText, $Startelegram, 'HTML');
 } elseif ($text == $textbotlang['keyboard']['minAmountStar']) {
     sendmessage($from_id, $textbotlang['Admin']['Balance']['askMinDeposit'], $backadmin, 'HTML');
     step("getmainaqstar", $from_id);

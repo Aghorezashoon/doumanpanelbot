@@ -384,6 +384,7 @@ $shopkeyboard = json_encode([
         [['text' => $textbotlang['keyboard']['manageCategory']], ['text' => $textbotlang['keyboard']['manageProducts']]],
         [['text' => $textbotlang['keyboard']['manageGiftCode']], ['text' => $textbotlang['keyboard']['manageDiscountCode']]],
         [['text' => $textbotlang['keyboard']['minBulkBalance']], ['text' => $textbotlang['keyboard']['renewalCashback']]],
+        [['text' => '⭐ قیمت استارز تلگرام']],
         [['text' => $textbotlang['Admin']['backAdminBtn']], ['text' => $textbotlang['Admin']['backMenuBtn']]]
     ],
     'resize_keyboard' => true
@@ -1507,6 +1508,7 @@ function keyboardTimeCategory($name_panel, $agent, $callback_data = "producttime
 }
 $Startelegram = json_encode([
     'inline_keyboard' => [
+        [['text' => '⭐ تنظیم قیمت هر استارز (تومان)', 'callback_data' => "paygwopt-starPrice"]],
         [['text' => $textbotlang['keyboard']['cashbackStar'], 'callback_data' => "paygwopt-cashbackStar"], ['text' => $textbotlang['keyboard']['setEducationStar'], 'callback_data' => "paygwopt-setEducationStar"]],
         [['text' => $textbotlang['keyboard']['minAmountStar'], 'callback_data' => "paygwopt-minAmountStar"], ['text' => $textbotlang['keyboard']['maxAmountStar'], 'callback_data' => "paygwopt-maxAmountStar"]],
         [['text' => $textbotlang['keyboard']['backToGateways'], 'callback_data' => "paygwlist"]],

@@ -31,6 +31,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'chang
     exit;
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_stars_price') {
+    csrf_check_post();
+    $starPrice = (int)($_POST['price_per_star'] ?? 0);
+    $check_exist = db_fetch($pdo, "SELECT * FROM PaySetting WHERE NamePay = 'price_per_star' LIMIT 1");
+    if ($check_exist) {
+        db_query($pdo, "UPDATE PaySetting SET ValuePay = ? WHERE NamePay = 'price_per_star'", [(string)$starPrice]);
+    } else {
+        db_query($pdo, "INSERT INTO PaySetting (NamePay, ValuePay) VALUES ('price_per_star', ?)", [(string)$starPrice]);
+    }
+    flash('success', 'قیمت هر استارز تلگرام با موفقیت ذخیره شد.');
+    header('Location: settings.php?tab=stars');
+    exit;
+}
+
 $tab = $_GET['tab'] ?? 'appearance';
 
 $themes = [
@@ -48,6 +62,7 @@ $themes = [
 $tabs = [
     'appearance' => ['icon' => 'settings', 'label' => $textbotlang['panel']['settingsTabAppearance']],
     'security' => ['icon' => 'block', 'label' => $textbotlang['panel']['settingsTabSecurity']],
+    'stars' => ['icon' => 'card', 'label' => 'نرخ استارز تلگرام ⭐'],
     'system' => ['icon' => 'dashboard', 'label' => $textbotlang['panel']['settingsTabSystem']],
 ];
 
@@ -222,6 +237,32 @@ include __DIR__ . '/inc/layout_head.php';
                 </div>
             </div>
         </div>
+    </div>
+
+<?php elseif ($tab === 'stars'):
+    $curStarPrice = (int)(db_fetch($pdo, "SELECT ValuePay FROM PaySetting WHERE NamePay = 'price_per_star' LIMIT 1")['ValuePay'] ?? 0);
+?>
+    <div class="card fade-up">
+        <div class="card-head">
+            <h3><?= icon('card', 16) ?> تنظیم نرخ استارز تلگرام (Telegram Stars)</h3>
+            <p class="card-head-desc">تعیین نرخ برابری هر ۱ عدد استارز به تومان جهت تبدیل دقیق قیمت سرویس‌ها در پرداخت با استارز</p>
+        </div>
+        <form method="POST" class="card-body">
+            <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+            <input type="hidden" name="action" value="save_stars_price">
+            <div class="form-grid">
+                <div class="field full">
+                    <label>قیمت هر استارز (تومان)</label>
+                    <input type="number" name="price_per_star" class="input" style="font-size:1.1rem;font-weight:700;" value="<?= $curStarPrice ?>" placeholder="مثلاً 1500" min="0">
+                    <small style="color:var(--mute);margin-top:6px;display:block;">
+                        💡 <b>راهنما:</b> اگر این فیلد را برابر <b>۰</b> قرار دهید، سیستم قیمت استارز را بر اساس نرخ روز دلار محاسبه خواهد کرد.
+                    </small>
+                </div>
+            </div>
+            <div style="margin-top:20px;display:flex;justify-content:flex-end;">
+                <button type="submit" class="btn btn-primary"><?= icon('check', 14) ?> ذخیره نرخ استارز</button>
+            </div>
+        </form>
     </div>
 
 <?php elseif ($tab === 'system'): ?>

@@ -5673,16 +5673,19 @@ process_preinvoice_label:
         $message_id = sendmessage($from_id, $textnowpayments, $paymentkeyboard, 'HTML');
         updatePaymentMessageId($message_id, $randomString);
     } elseif ($datain == "startelegrams") {
-        $rates = rate_arze(['USD', 'Ton']);
-        if ($rates === null) {
-            sendmessage($from_id, $textbotlang['users']['Balance']['errorLinkPayment'], $keyboard, 'HTML');
-            step('home', $from_id);
-            return;
+        $customStarPrice = intval(select("PaySetting", "ValuePay", "NamePay", "price_per_star", "select")['ValuePay'] ?? 0);
+        if ($customStarPrice > 0) {
+            $starAmount = max(1, intval(ceil($user['Processing_value'] / $customStarPrice)));
+        } else {
+            $rates = rate_arze(['USD', 'Ton']);
+            if ($rates === null) {
+                $usd = 95000;
+            } else {
+                $usd = $rates['USD'];
+            }
+            $starRate = $usd * 0.016;
+            $starAmount = max(1, intval(ceil($user['Processing_value'] / $starRate)));
         }
-        $usd = $rates['USD'];
-        $usdprice = round($user['Processing_value'] / $usd, 2);
-        $starAmount = $usd * 0.016;
-        $starAmount = intval($user['Processing_value'] / $starAmount);
         $mainbalance = select("PaySetting", "ValuePay", "NamePay", "minbalancestar", "select")['ValuePay'];
         $maxbalance = select("PaySetting", "ValuePay", "NamePay", "maxbalancestar", "select")['ValuePay'];
         if ($user['Processing_value'] < $mainbalance || $user['Processing_value'] > $maxbalance) {

@@ -83,12 +83,13 @@ include __DIR__ . '/inc/layout_head.php';
           <th><?= $textbotlang['panel']['invoiceColPrice'] ?></th>
           <th><?= $textbotlang['panel']['invoiceColStatus'] ?></th>
           <th><?= $textbotlang['panel']['invoiceColDate'] ?></th>
+          <th>فاکتور رسمی</th>
         </tr>
       </thead>
       <tbody>
         <?php if (empty($invoices)): ?>
           <tr>
-            <td colspan="6">
+            <td colspan="7">
               <div class="empty">
                 <svg class="ill" viewBox="0 0 160 120" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <rect x="30" y="15" width="100" height="90" rx="8" fill="var(--sf3)" />
@@ -114,6 +115,11 @@ include __DIR__ . '/inc/layout_head.php';
               <td class="cn cs"><?= number_format((int) ($inv['price_product'] ?? 0)) ?> <span class="cf"><?= $textbotlang['panel']['invoiceColTrackingCode'] ?></span></td>
               <td class="cf"><?= safe_date($inv['time_sell'] ?? null, 'Y/m/d') ?></td>
               <td><span class="tag <?= $cls ?>"><?= $lbl ?></span></td>
+              <td>
+                <a href="print_invoice.php?id=<?= urlencode($inv['id_invoice']) ?>" target="_blank" class="btn btn-primary btn-sm" style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;font-size:.76rem;border-radius:7px;text-decoration:none;" title="صدور فاکتور رسمی">
+                  <?= icon('download', 12) ?> <span>فاکتور رسمی</span>
+                </a>
+              </td>
             </tr>
           <?php endforeach; endif; ?>
       </tbody>
