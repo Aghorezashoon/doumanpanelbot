@@ -836,7 +836,11 @@ function createPayiranpay4($price, $order_id)
 
     $callback_url = "https://$domainhosts/payment/iranpay4.php?order_id=" . urlencode((string) $order_id);
     $endpointClean = rtrim($endpoint, '/');
-    if (str_ends_with($endpointClean, '/invoices') || str_contains($endpointClean, '/v1/invoices')) {
+
+    // If endpoint is a HooshPay custom gateway (/m/<slug>), post directly to it!
+    if (str_contains($endpointClean, '/m/')) {
+        $createUrl = $endpointClean;
+    } elseif (str_ends_with($endpointClean, '/invoices') || str_contains($endpointClean, '/v1/invoices')) {
         $createUrl = $endpointClean;
     } elseif (str_contains($endpointClean, 'hooshpay.xyz')) {
         $createUrl = $endpointClean . (str_ends_with($endpointClean, '/v1') ? '/invoices' : '/api/v1/invoices');
@@ -844,7 +848,9 @@ function createPayiranpay4($price, $order_id)
         $createUrl = $endpointClean . '/create';
     }
 
+    // HooshPay expects: api_key, amount, order_id in POST body
     $postData = [
+        'api_key' => $api_key,
         'amount' => intval($price),
         'order_id' => (string) $order_id,
         'callback_url' => $callback_url,
@@ -870,27 +876,33 @@ function createPayiranpay4($price, $order_id)
 
     $response = curl_exec($curl);
     if ($response === false) {
-        return ['success' => false, 'message' => 'iranpay4: gateway unreachable'];
+        $err = curl_error($curl);
+        error_log('createPayiranpay4 curl error: ' . $err);
+        return ['success' => false, 'message' => 'iranpay4: gateway unreachable: ' . $err];
     }
 
     $decoded = json_decode($response, true);
     if (!is_array($decoded)) {
+        error_log('createPayiranpay4 bad response: ' . $response);
         return ['success' => false, 'message' => 'iranpay4: bad response', 'raw' => $response];
     }
 
-    $link = $decoded['payment_link']
+    // HooshPay returns { "url": "https://..." }
+    $link = $decoded['url']
+        ?? $decoded['payment_link']
         ?? $decoded['link']
-        ?? $decoded['url']
         ?? $decoded['payment_url']
         ?? $decoded['data']['payment_url']
-        ?? $decoded['data']['link']
         ?? $decoded['data']['url']
+        ?? $decoded['data']['link']
         ?? $decoded['invoice_url']
         ?? null;
 
     if ($link) {
         $decoded['success'] = true;
         $decoded['payment_link'] = $link;
+    } else {
+        error_log('createPayiranpay4 missing link in: ' . json_encode($decoded));
     }
 
     return $decoded;

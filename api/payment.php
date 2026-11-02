@@ -73,11 +73,43 @@ function pay_payment(array $data, string $method): void
     sendJsonResponse(true, "Successful", $payment, 200);
 }
 
+function pay_custom_payment_verify(array $data, string $method): void
+{
+    global $pdo;
+
+    validateMethod('POST', $method);
+
+    $order_id = trim((string) ($data['order_id'] ?? $data['id_order'] ?? ''));
+    if ($order_id === '') {
+        sendJsonResponse(false, "order_id is required", []);
+    }
+
+    $payment = select("Payment_report", "*", "id_order", $order_id, "select");
+    if (!$payment) {
+        sendJsonResponse(false, "order not found", []);
+    }
+
+    if ($payment['payment_Status'] === 'paid') {
+        sendJsonResponse(true, "Already settled", ['order_id' => $order_id]);
+    }
+
+    if (!claimPaymentPaid($order_id)) {
+        sendJsonResponse(true, "Already claimed", ['order_id' => $order_id]);
+    }
+
+    try {
+        DirectPayment($order_id, __DIR__ . "/../images.jpg");
+    } catch (Throwable $e) {
+        error_log("custom_payment_verify: DirectPayment failed for {$order_id}: " . $e->getMessage());
+        sendJsonResponse(false, "delivery failed", []);
+    }
+
+    sendJsonResponse(true, "Payment verified successfully", ['order_id' => $order_id]);
+}
+
 match ($action) {
     'payments' => pay_payments($data, $method),
     'payment' => pay_payment($data, $method),
+    'custom_payment_verify' => pay_custom_payment_verify($data, $method),
     default => sendJsonResponse(false, "Action Invalid"),
 };
-
-
-?>

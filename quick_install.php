@@ -1,6 +1,6 @@
 <?php
 /**
- * Douman Panel Pro - Web & cPanel Quick Installer
+ * Voldemort Cloud (Vold Cloud) - Web & cPanel Quick Installer
  * نصب‌کننده تحت وب و آسان دوپینل پرو برای هاست‌های اشتراکی cPanel، دایرکت‌ادمین و وردپرس
  */
 
@@ -76,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['install_submit'])) {
 
             // Generate config.php
             $configContent = "<?php\n";
-            $configContent .= "// Douman Panel Pro Configuration\n";
+            $configContent .= "// Voldemort Cloud (Vold Cloud) Configuration\n";
             $configContent .= "\$request_exec_timeout = null;\n";
             $configContent .= "\$dbhost = " . var_export($dbHost, true) . ";\n";
             $configContent .= "\$dbname = " . var_export($dbName, true) . ";\n";
@@ -121,7 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['install_submit'])) {
             $stmtAlias = $pdo->prepare("INSERT INTO admin (id_admin, username, password, rule) VALUES ('1', 'admin', :pass, 'administrator') ON DUPLICATE KEY UPDATE password = :pass, rule = 'administrator'");
             $stmtAlias->execute([':pass' => $hashedPanelPass]);
 
-            $successMessage = 'نصب و راه‌اندازی ربات دومان پنل پرو با موفقیت کامل انجام شد!';
+            $successMessage = 'نصب و راه‌اندازی ربات وولدمورت کلود (Vold Cloud) با موفقیت کامل انجام شد!';
             $isInstalled = true;
         } catch (PDOException $e) {
             $errors[] = 'خطا در اتصال به دیتابیس MySQL: ' . $e->getMessage();
@@ -136,7 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['install_submit'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>نصب‌کننده تحت وب دوپینل پرو | Douman Panel Pro (cPanel & Host)</title>
+    <title>نصب‌کننده تحت وب دوپینل پرو | Voldemort Cloud (Vold Cloud) (cPanel & Host)</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
