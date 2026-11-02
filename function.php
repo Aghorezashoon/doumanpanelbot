@@ -824,6 +824,40 @@ function abangatewayEndpoint(): ?string
     return rtrim($endpoint, '/');
 }
 
+function createPayiranpay4($price, $order_id)
+{
+    global $domainhosts;
+
+    $api_key = trim((string) getPaySettingValue('apiiranpay4', ''));
+    $endpoint = abangatewayEndpoint();
+    if ($api_key === '' || $api_key === '0' || $endpoint === null) {
+        return ['success' => false, 'message' => 'iranpay4: key or endpoint is unset'];
+    }
+
+    $callback_url = "https://$domainhosts/payment/iranpay4.php?order_id=" . urlencode((string) $order_id);
+    $endpointClean = rtrim($endpoint, '/');
+    if (str_ends_with($endpointClean, '/invoices') || str_contains($endpointClean, '/v1/invoices')) {
+        $createUrl = $endpointClean;
+    } elseif (str_contains($endpointClean, 'hooshpay.xyz')) {
+        $createUrl = $endpointClean . (str_ends_with($endpointClean, '/v1') ? '/invoices' : '/api/v1/invoices');
+    } else {
+        $createUrl = $endpointClean . '/create';
+    }
+
+    $postData = [
+        'amount' => intval($price),
+        'order_id' => (string) $order_id,
+        'callback_url' => $callback_url,
+        'return_url' => $callback_url,
+        'fee_mode' => 'seller',
+        'description' => "Order #$order_id",
+    ];
+
+    $curl = curl_init();
+    curl_setopt_array($curl, [
+        CURLOPT_URL => $createUrl,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 25,
         CURLOPT_CUSTOMREQUEST => 'POST',
         CURLOPT_HTTPHEADER => [
             'Content-Type: application/json',
