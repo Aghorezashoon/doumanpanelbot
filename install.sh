@@ -990,23 +990,106 @@ export -f get_port_process
 APACHE_HTTP_PORT="${APACHE_HTTP_PORT:-80}"
 APACHE_HTTPS_PORT="${APACHE_HTTPS_PORT:-443}"
 
+create_db_user_and_grant() {
+    local dbname="$1"
+    local dbuser="$2"
+    local dbpass="$3"
+    local rootuser="${4:-root}"
+    local rootpass="$5"
+
+    local auth_args=("-u$rootuser")
+    [ -n "$rootpass" ] && auth_args+=("-p$rootpass")
+
+    local is_mariadb=0
+    if mysql "${auth_args[@]}" -e "SELECT VERSION();" 2>/dev/null | grep -qi "mariadb"; then
+        is_mariadb=1
+    fi
+
+    # Create Database
+    mysql "${auth_args[@]}" -e "CREATE DATABASE IF NOT EXISTS \`$dbname\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" || return 1
+
+    if [ "$is_mariadb" -eq 1 ]; then
+        # In MariaDB: IDENTIFIED BY 'password' is the universal standard syntax.
+        # Do NOT use IDENTIFIED WITH ... BY (it produces syntax error 1064 in MariaDB).
+        mysql "${auth_args[@]}" -e "
+            CREATE USER IF NOT EXISTS '$dbuser'@'%' IDENTIFIED BY '$dbpass';
+            ALTER USER '$dbuser'@'%' IDENTIFIED BY '$dbpass';
+            GRANT ALL PRIVILEGES ON \`$dbname\`.* TO '$dbuser'@'%';
+            CREATE USER IF NOT EXISTS '$dbuser'@'localhost' IDENTIFIED BY '$dbpass';
+            ALTER USER '$dbuser'@'localhost' IDENTIFIED BY '$dbpass';
+            GRANT ALL PRIVILEGES ON \`$dbname\`.* TO '$dbuser'@'localhost';
+            FLUSH PRIVILEGES;
+        " || return 1
+    else
+        # Oracle MySQL: try standard IDENTIFIED BY first
+        if ! mysql "${auth_args[@]}" -e "
+            CREATE USER IF NOT EXISTS '$dbuser'@'%' IDENTIFIED BY '$dbpass';
+            ALTER USER '$dbuser'@'%' IDENTIFIED BY '$dbpass';
+            GRANT ALL PRIVILEGES ON \`$dbname\`.* TO '$dbuser'@'%';
+            CREATE USER IF NOT EXISTS '$dbuser'@'localhost' IDENTIFIED BY '$dbpass';
+            ALTER USER '$dbuser'@'localhost' IDENTIFIED BY '$dbpass';
+            GRANT ALL PRIVILEGES ON \`$dbname\`.* TO '$dbuser'@'localhost';
+            FLUSH PRIVILEGES;
+        " 2>/dev/null; then
+            local plugin="mysql_native_password"
+            if ! mysql "${auth_args[@]}" -N -B -e "SELECT PLUGIN_STATUS FROM INFORMATION_SCHEMA.PLUGINS WHERE PLUGIN_NAME='mysql_native_password';" 2>/dev/null | grep -qi ACTIVE; then
+                plugin="caching_sha2_password"
+            fi
+            mysql "${auth_args[@]}" -e "
+                CREATE USER IF NOT EXISTS '$dbuser'@'%' IDENTIFIED WITH $plugin BY '$dbpass';
+                ALTER USER '$dbuser'@'%' IDENTIFIED WITH $plugin BY '$dbpass';
+                GRANT ALL PRIVILEGES ON \`$dbname\`.* TO '$dbuser'@'%';
+                CREATE USER IF NOT EXISTS '$dbuser'@'localhost' IDENTIFIED WITH $plugin BY '$dbpass';
+                ALTER USER '$dbuser'@'localhost' IDENTIFIED WITH $plugin BY '$dbpass';
+                GRANT ALL PRIVILEGES ON \`$dbname\`.* TO '$dbuser'@'localhost';
+                FLUSH PRIVILEGES;
+            " || return 1
+        fi
+    fi
+    return 0
+}
+export -f create_db_user_and_grant
+
 configure_apache_ports() {
-    local http_p="${APACHE_HTTP_PORT:-80}"
-    local https_p="${APACHE_HTTPS_PORT:-443}"
+    local saved_http saved_https
+    saved_http="$(state_get APACHE_HTTP_PORT 2>/dev/null)"
+    saved_https="$(state_get APACHE_HTTPS_PORT 2>/dev/null)"
+    [ -n "$saved_http" ] && APACHE_HTTP_PORT="$saved_http"
+    [ -n "$saved_https" ] && APACHE_HTTPS_PORT="$saved_https"
+
+    # Always check if port 80 or 443 are occupied by non-apache services (e.g. docker-pr)
+    local p80_proc="$(get_port_process 80)"
+    local p443_proc="$(get_port_process 443)"
+    if [ -n "$p80_proc" ] && [ "$p80_proc" != "apache2" ] && [ "$p80_proc" != "httpd" ]; then
+        if [ -z "$APACHE_HTTP_PORT" ] || [ "$APACHE_HTTP_PORT" = "80" ]; then
+            APACHE_HTTP_PORT="8080"
+            state_set APACHE_HTTP_PORT "8080"
+        fi
+    fi
+    if [ -n "$p443_proc" ] && [ "$p443_proc" != "apache2" ] && [ "$p443_proc" != "httpd" ]; then
+        if [ -z "$APACHE_HTTPS_PORT" ] || [ "$APACHE_HTTPS_PORT" = "443" ]; then
+            APACHE_HTTPS_PORT="8443"
+            state_set APACHE_HTTPS_PORT "8443"
+        fi
+    fi
+
+    local http_p="${APACHE_HTTP_PORT:-8080}"
+    local https_p="${APACHE_HTTPS_PORT:-8443}"
     local ports_file="/etc/apache2/ports.conf"
 
     if [ -d "/etc/apache2" ]; then
+        # Enable required Apache modules first so ssl/rewrite directives won't crash Apache
+        a2enmod ssl rewrite headers >/dev/null 2>&1 || true
+
+        # Write ports.conf without module conditionals so Apache always listens on the assigned ports
         cat <<EOF > "$ports_file"
 Listen $http_p
-
-<IfModule ssl_module>
-    Listen $https_p
-</IfModule>
-
-<IfModule mod_gnutls.c>
-    Listen $https_p
-</IfModule>
+Listen $https_p
 EOF
+
+        # Disable default sites that bind to port 80
+        a2dissite 000-default.conf default-ssl.conf 000-default-le-ssl.conf >/dev/null 2>&1 || true
+        rm -f /etc/apache2/sites-enabled/000-default* 2>/dev/null || true
     fi
 }
 export -f configure_apache_ports
@@ -2236,6 +2319,26 @@ function install_bot() {
     PHP_VER="$(state_get PHP_VER)"
     [ -z "$PHP_VER" ] && PHP_VER="$PHP_TARGET_VER"
 
+    # Auto-load or auto-detect Apache custom ports (keeps Docker on 80/443 safe even on resume)
+    APACHE_HTTP_PORT="$(state_get APACHE_HTTP_PORT 2>/dev/null)"
+    APACHE_HTTPS_PORT="$(state_get APACHE_HTTPS_PORT 2>/dev/null)"
+    local _p80_active="$(get_port_process 80)"
+    local _p443_active="$(get_port_process 443)"
+    if [ -n "$_p80_active" ] && [ "$_p80_active" != "apache2" ] && [ "$_p80_active" != "httpd" ]; then
+        if [ -z "$APACHE_HTTP_PORT" ] || [ "$APACHE_HTTP_PORT" = "80" ]; then
+            APACHE_HTTP_PORT="8080"
+            state_set APACHE_HTTP_PORT "8080"
+        fi
+    fi
+    if [ -n "$_p443_active" ] && [ "$_p443_active" != "apache2" ] && [ "$_p443_active" != "httpd" ]; then
+        if [ -z "$APACHE_HTTPS_PORT" ] || [ "$APACHE_HTTPS_PORT" = "443" ]; then
+            APACHE_HTTPS_PORT="8443"
+            state_set APACHE_HTTPS_PORT "8443"
+        fi
+    fi
+    APACHE_HTTP_PORT="${APACHE_HTTP_PORT:-80}"
+    APACHE_HTTPS_PORT="${APACHE_HTTPS_PORT:-443}"
+
     # ── Guard: only block when a PREVIOUS install fully COMPLETED ──
     if [ -f "$CONFIG_FILE_DEFAULT" ] && ! has_resumable_state; then
         clear
@@ -2568,12 +2671,19 @@ function install_bot() {
 
     # ╭──────────────────────── PHASE: SSL ─────────────────────────╮
     if ! phase_done SSL; then
+        configure_apache_ports
         local cert_ready=0
+        local _p80_proc="$(get_port_process 80)"
+        local _p80_is_docker=0
+        if [ -n "$_p80_proc" ] && [ "$_p80_proc" != "apache2" ] && [ "$_p80_proc" != "httpd" ]; then
+            _p80_is_docker=1
+        fi
+
         if [ -f "/etc/letsencrypt/live/$DOMAIN_NAME/fullchain.pem" ] && [ -f "/etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem" ]; then
             echo -e " ${C_OK}●${CR} ${C_DIM}SSL certificate for ${DOMAIN_NAME} already exists - reusing.${CR}"
             cert_ready=1
-        elif [ "${APACHE_HTTP_PORT:-80}" != "80" ]; then
-            echo -e " ${C_OK}●${CR} ${C_TXT}Custom port mode active (HTTP: ${APACHE_HTTP_PORT} / HTTPS: ${APACHE_HTTPS_PORT}).${CR}"
+        elif [ "${APACHE_HTTP_PORT:-80}" != "80" ] || [ "$_p80_is_docker" -eq 1 ]; then
+            echo -e " ${C_OK}●${CR} ${C_TXT}Custom port mode active (HTTP: ${APACHE_HTTP_PORT:-8080} / HTTPS: ${APACHE_HTTPS_PORT:-8443}).${CR}"
             echo -e " ${C_DIM}Generating 10-year SSL certificate for ${DOMAIN_NAME} (Zero port 80/443 conflict with Docker)...${CR}"
             mkdir -p "/etc/letsencrypt/live/$DOMAIN_NAME"
             openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
@@ -2584,7 +2694,7 @@ function install_bot() {
         else
             run_step "Opening firewall ports 80 & 443" "ufw allow 80 && ufw allow 443 2>/dev/null || true" \
                 || { show_step_error; install_pause "Opening firewall ports"; }
-            run_step "Stopping Apache for certificate issuance" "systemctl stop apache2" \
+            run_step "Stopping Apache for certificate issuance" "systemctl stop apache2 2>/dev/null || true" \
                 || { show_step_error; install_pause "Stopping Apache"; }
             run_step "Installing Let's Encrypt (certbot)" "apt install letsencrypt -y && systemctl enable certbot.timer 2>/dev/null || true" \
                 || { show_step_error; install_pause "Installing certbot"; }
@@ -2602,7 +2712,12 @@ function install_bot() {
         fi
         configure_apache_ports
         run_step "Enabling & starting Apache" "systemctl enable apache2 && systemctl restart apache2" \
-            || { show_step_error; install_pause "Starting Apache"; }
+            || {
+                echo -e " ${C_WARN}!${CR} ${C_WARN}Apache restart diagnostic (apache2ctl configtest):${CR}"
+                apache2ctl configtest || true
+                show_step_error
+                install_pause "Starting Apache"
+            }
         mark_phase SSL
     else
         echo -e " ${C_OK}●${CR} ${C_DIM}SSL certificate already configured - skipping.${CR}"
@@ -2795,9 +2910,9 @@ EOF
         else
             echo -e " ${C_OK}●${CR} ${C_DIM}Database credentials resumed.${CR}"
         fi
-        # Idempotent: safe to re-run (IF NOT EXISTS), so a resumed install never breaks here
+        # Idempotent: safe to re-run, fully compatible with both MariaDB and Oracle MySQL
         run_step "Creating database & user" \
-            "mysql -u root -p$ROOT_PASSWORD -e \"CREATE DATABASE IF NOT EXISTS $dbname;\" && mysql -u root -p$ROOT_PASSWORD -e \"CREATE USER IF NOT EXISTS '$dbuser'@'%' IDENTIFIED WITH $MYSQL_AUTH_PLUGIN BY '$dbpass'; GRANT ALL PRIVILEGES ON $dbname.* TO '$dbuser'@'%'; FLUSH PRIVILEGES;\" && mysql -u root -p$ROOT_PASSWORD -e \"CREATE USER IF NOT EXISTS '$dbuser'@'localhost' IDENTIFIED WITH $MYSQL_AUTH_PLUGIN BY '$dbpass'; GRANT ALL PRIVILEGES ON $dbname.* TO '$dbuser'@'localhost'; FLUSH PRIVILEGES;\"" \
+            "create_db_user_and_grant '$dbname' '$dbuser' '$dbpass' 'root' '$ROOT_PASSWORD'" \
             || { show_step_error; install_pause "Creating database/user"; }
         mark_phase DB
     else
@@ -3314,11 +3429,7 @@ function migrate_to_pro() {
     NEW_DB_USER=$(openssl rand -base64 10 | tr -dc 'a-zA-Z' | cut -c1-8)
     NEW_DB_PASS=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | cut -c1-10)
     echo -e "\033[33mCreating new database user...\033[0m"
-    mysql -u "$ROOT_USER" -p"$ROOT_PASS" -e "CREATE USER '$NEW_DB_USER'@'localhost' IDENTIFIED WITH $MYSQL_AUTH_PLUGIN BY '$NEW_DB_PASS';"
-    mysql -u "$ROOT_USER" -p"$ROOT_PASS" -e "GRANT ALL PRIVILEGES ON $NEW_DB.* TO '$NEW_DB_USER'@'localhost';"
-    mysql -u "$ROOT_USER" -p"$ROOT_PASS" -e "CREATE USER '$NEW_DB_USER'@'%' IDENTIFIED WITH $MYSQL_AUTH_PLUGIN BY '$NEW_DB_PASS';"
-    mysql -u "$ROOT_USER" -p"$ROOT_PASS" -e "GRANT ALL PRIVILEGES ON $NEW_DB.* TO '$NEW_DB_USER'@'%';"
-    mysql -u "$ROOT_USER" -p"$ROOT_PASS" -e "FLUSH PRIVILEGES;"
+    create_db_user_and_grant "$NEW_DB" "$NEW_DB_USER" "$NEW_DB_PASS" "$ROOT_USER" "$ROOT_PASS"
     echo -e "\033[33mReading old configuration...\033[0m"
     OLD_API_KEY=$(grep '$APIKEY' "$OLD_CONFIG" | cut -d"'" -f2)
     OLD_ADMIN_ID=$(grep '$adminnumber' "$OLD_CONFIG" | cut -d"'" -f2)
