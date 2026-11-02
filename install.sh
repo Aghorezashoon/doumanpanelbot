@@ -647,7 +647,7 @@ upgrade_php_if_needed() {
         "DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=180 php${V}-soap php${V}-ssh2" \
         || show_step_error
 
-    activate_cmd="a2dismod ${old_vers} mpm_event mpm_worker 2>/dev/null; a2enmod php${V} mpm_prefork && update-alternatives --set php /usr/bin/php${V} && systemctl restart apache2"
+    activate_cmd="a2dismod ${old_vers} mpm_event mpm_worker 2>/dev/null; a2enmod php${V} mpm_prefork 2>/dev/null; update-alternatives --set php /usr/bin/php${V} 2>/dev/null; configure_apache_ports; (systemctl restart apache2 2>/dev/null || true)"
     run_step "Setting PHP ${V} as the active version" "$activate_cmd" \
         || { show_step_error; return 1; }
 
@@ -2480,7 +2480,7 @@ function install_bot() {
 
         if is_apache_installed; then
             echo -e " ${C_OK}●${CR} ${C_TXT}Existing Apache2 installation detected — preserving and reusing.${CR}"
-            systemctl enable --now apache2 2>/dev/null || systemctl start apache2 2>/dev/null || true
+            systemctl enable apache2 2>/dev/null || true
         else
             echo -e " ${C_DIM}Apache2 not found — adding apache2 to install list.${CR}"
             needed_pkgs+=("apache2")
@@ -2519,12 +2519,15 @@ function install_bot() {
                 || { show_step_error; install_pause "Installing web & PHP modules"; }
         fi
 
+        # Immediately apply custom ports before any service is started/restarted
+        configure_apache_ports
+
         local _other_php="" _pv
         for _pv in 8.5 8.4 8.3 8.2 8.1 8.0 7.4; do
             [ "$_pv" = "$PHP_VER" ] || _other_php="$_other_php php$_pv"
         done
         run_step "Setting PHP ${PHP_VER} as the active version" \
-            "a2dismod${_other_php} mpm_event mpm_worker 2>/dev/null; a2enmod php${PHP_VER} mpm_prefork 2>/dev/null; update-alternatives --set php /usr/bin/php${PHP_VER} 2>/dev/null; systemctl restart apache2" \
+            "a2dismod${_other_php} mpm_event mpm_worker 2>/dev/null; a2enmod php${PHP_VER} mpm_prefork 2>/dev/null; update-alternatives --set php /usr/bin/php${PHP_VER} 2>/dev/null; configure_apache_ports; (systemctl restart apache2 2>/dev/null || true)" \
             || { show_step_error; install_pause "Setting PHP ${PHP_VER} as default"; }
 
         if ! _pkg_installed phpmyadmin; then
@@ -2539,7 +2542,7 @@ function install_bot() {
                 "DEBIAN_FRONTEND=noninteractive apt-get install -y phpmyadmin" \
                 || { show_step_error; install_pause "Installing phpMyAdmin"; }
         else
-            echo -e " ${C_OK}●${CR} ${C_TXT}Existing phpMyAdmin installation detected — reusing.${CR}"
+            echo -e " ${C_OK}●${CR} ${C_TXT}Existing phpMyAdmin installation detected → reusing.${CR}"
         fi
 
         if [ -f /etc/phpmyadmin/apache.conf ] && [ ! -f /etc/apache2/conf-available/phpmyadmin.conf ]; then
@@ -2552,13 +2555,13 @@ function install_bot() {
             || { show_step_error; install_pause "Installing extra PHP modules"; }
 
         run_step "Enabling & starting services (MySQL, Apache)" \
-            "systemctl enable mysql.service && systemctl start mysql.service && systemctl enable apache2 && systemctl start apache2" \
+            "configure_apache_ports; (systemctl enable mariadb 2>/dev/null || systemctl enable mysql 2>/dev/null || true); (systemctl start mariadb 2>/dev/null || systemctl start mysql 2>/dev/null || true); systemctl enable apache2 && systemctl restart apache2" \
             || { show_step_error; install_pause "Enabling core services"; }
 
         run_step "Configuring firewall (UFW + Apache)" \
-            "apt-get install -y ufw && ufw allow 'Apache'" \
+            "apt-get install -y ufw && ufw allow 'Apache' 2>/dev/null || true; ufw allow ${APACHE_HTTP_PORT:-8080}/tcp 2>/dev/null || true; ufw allow ${APACHE_HTTPS_PORT:-8443}/tcp 2>/dev/null || true" \
             || { show_step_error; install_pause "Configuring UFW"; }
-        run_step "Restarting Apache" "systemctl restart apache2" \
+        run_step "Restarting Apache" "configure_apache_ports && systemctl restart apache2" \
             || { show_step_error; install_pause "Restarting Apache"; }
 
         mark_phase DEPS
