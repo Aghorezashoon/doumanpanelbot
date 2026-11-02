@@ -813,7 +813,7 @@ if ($datain == "paygwback") {
         sendmessage($from_id, "🔐 لطفاً نحوه احراز هویت پنل SolidLayer را انتخاب کنید:
 
 ۱. <b>API Token:</b> اتصال مستفیم با کلید اختصاصی API Key
-۲. <b>نام‌کاربری و رمز عبور:</b> دریافت خود�کار توکن JWT با اکانت ادمین", $btnAuth, 'HTML');
+۲. <b>نام‌کاربری و رمز عبور:</b> دریافت خودکار توکن JWT با اکانت ادمین", $btnAuth, 'HTML');
         return;
     } elseif ($paneltype == "hiddify") {
         savedata("save", "username", "null");
@@ -2794,13 +2794,67 @@ elseif ($datain == "systemsms") {
     update("marzban_panel", "datelogin", null, "name_panel", $user['Processing_value']);
     step('home', $from_id);
 } elseif ($text == $textbotlang['keyboard']['changeUserGroup'] && $adminrulecheck['rule'] == "administrator") {
-    sendmessage($from_id, $textbotlang['Admin']['managepanel']['askUserGroup'], $backadmin, 'HTML');
+    $cur_panel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
+    $curr_agent = $cur_panel['agent'] ?? 'all';
+    $agent_title = match($curr_agent) {
+        'agents' => '👥 فقط نماینده‌ها (مخفی برای عادی)',
+        'n2' => '👑 فقط نماینده ارشد (مخفی برای عادی و نماینده عادی)',
+        'f' => '👤 فقط کاربران عادی',
+        'n' => '🏢 فقط نماینده عادی',
+        default => '🌐 نمایش برای همه (all)'
+    };
+    $prompt = "📍 <b>تنظیم سطح دسترسی و نمایش پنل</b>\n\n"
+        . "🔹 نام پنل: <code>" . htmlspecialchars($user['Processing_value'] ?? '') . "</code>\n"
+        . "🔹 وضعیت فعلی: <b>$agent_title</b>\n\n"
+        . "لطفاً انتخاب کنید این پنل به چه کاربرانی نمایش داده شود:\n"
+        . "• <b>همه کاربران</b>: نمایش برای همه (عادی و نماینده‌ها)\n"
+        . "• <b>فقط نماینده‌ها</b>: مخفی برای کاربران عادی، فقط نماینده‌ها می‌بینند\n"
+        . "• <b>فقط نماینده ارشد</b>: مخفی برای عادی و نماینده عادی، فقط ارشد (n2) می‌بیند\n"
+        . "• <b>فقط کاربران عادی</b>: فقط کاربران معمولی (f) می‌بینند";
+
+    $agent_keyboard = json_encode([
+        'inline_keyboard' => [
+            [['text' => "🌐 نمایش برای همه (عادی و نماینده‌ها)", 'callback_data' => "setpanelagent_all"]],
+            [['text' => "👥 فقط نماینده‌ها (مخفی برای عادی)", 'callback_data' => "setpanelagent_agents"]],
+            [['text' => "👑 فقط نماینده ارشد (مخفی برای عادی و نماینده)", 'callback_data' => "setpanelagent_n2"]],
+            [['text' => "👤 فقط کاربران عادی (f)", 'callback_data' => "setpanelagent_f"]],
+            [['text' => "🏢 فقط نماینده عادی (n)", 'callback_data' => "setpanelagent_n"]],
+        ]
+    ]);
+    sendmessage($from_id, $prompt, $agent_keyboard, 'HTML');
     step('getagentpanel', $from_id);
+} elseif (preg_match('/^setpanelagent_(all|agents|n2|f|n)$/', $datain, $matches) && $adminrulecheck['rule'] == "administrator") {
+    $chosen_agent = $matches[1];
+    $panel_name = $user['Processing_value'];
+    $typepanel = select("marzban_panel", "*", "name_panel", $panel_name, "select");
+    update("marzban_panel", "agent", $chosen_agent, "name_panel", $panel_name);
+    step('home', $from_id);
+    $agent_title = match($chosen_agent) {
+        'agents' => '👥 فقط نماینده‌ها (مخفی برای کاربران عادی)',
+        'n2' => '👑 فقط نماینده ارشد (مخفی برای عادی و نماینده عادی)',
+        'f' => '👤 فقط کاربران عادی',
+        'n' => '🏢 فقط نماینده عادی',
+        default => '🌐 همه کاربران (عادی و نماینده‌ها)'
+    };
+    Editmessagetext($from_id, $message_id, "✅ سطح نمایش پنل با موفقیت به <b>$agent_title</b> تغییر یافت.", null, 'HTML');
+    outtypepanel($typepanel['type'], $textbotlang['Admin']['managepanel']['userGroupChanged']);
 } elseif ($user['step'] == "getagentpanel") {
     $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
-    outtypepanel($typepanel['type'], $textbotlang['Admin']['managepanel']['userGroupChanged']);
-    update("marzban_panel", "agent", $text, "name_panel", $user['Processing_value']);
+    $val = trim($text);
+    if (str_contains($val, 'همه') || $val === 'all') {
+        $val = 'all';
+    } elseif (str_contains($val, 'فقط نماینده') || $val === 'agents') {
+        $val = 'agents';
+    } elseif (str_contains($val, 'نماینده ارشد') || $val === 'n2') {
+        $val = 'n2';
+    } elseif (str_contains($val, 'کاربر عادی') || str_contains($val, 'کاربران عادی') || $val === 'f') {
+        $val = 'f';
+    } elseif ($val === 'n') {
+        $val = 'n';
+    }
+    update("marzban_panel", "agent", $val, "name_panel", $user['Processing_value']);
     step('home', $from_id);
+    outtypepanel($typepanel['type'], $textbotlang['Admin']['managepanel']['userGroupChanged']);
 } elseif ($text == $textbotlang['Admin']['managepanel']['btnSubLinkDomain'] && $adminrulecheck['rule'] == "administrator") {
     sendmessage($from_id, $textbotlang['Admin']['managepanel']['askSubLinkSample'], $backadmin, 'HTML');
     step('GeturlNewx', $from_id);

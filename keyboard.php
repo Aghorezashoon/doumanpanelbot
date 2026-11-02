@@ -863,7 +863,15 @@ $helpappremove['keyboard'][] = [
 ];
 $json_list_remove_helpـlink = json_encode($helpappremove);
 //------------------  [ listpanelusers ]----------------//
-$activePanelRows = array_filter($allPanelRows, fn($panel) => $panel['status'] == "active" && in_array($panel['agent'], [$users['agent'], "all"]));
+$activePanelRows = array_filter($allPanelRows, function($panel) use ($users) {
+    if ($panel['status'] != "active") return false;
+    $pAgent = $panel['agent'] ?? 'all';
+    $uAgent = $users['agent'] ?? 'f';
+    if ($pAgent === 'all' || empty($pAgent)) return true;
+    if ($pAgent === $uAgent) return true;
+    if ($pAgent === 'agents' && in_array($uAgent, ['n', 'n2'])) return true;
+    return false;
+});
 $manualsellCounts = [];
 if (in_array('Manualsale', array_column($activePanelRows, 'type'))) {
     foreach ($pdo->query("SELECT codepanel, COUNT(*) AS c FROM manualsell WHERE status = 'active' GROUP BY codepanel")->fetchAll(PDO::FETCH_ASSOC) as $msRow) {
@@ -979,7 +987,10 @@ $list_marzban_panel_userschange = json_encode($list_marzban_panel_users_change);
 //------------------  [ listpanelusers test ]----------------//
 $list_marzban_panel_usertest = ['inline_keyboard' => []];
 foreach ($allPanelRows as $result) {
-    if ($result['TestAccount'] != "ONTestAccount" || !in_array($result['agent'], [$users['agent'], "all"]))
+    $pAgent = $result['agent'] ?? 'all';
+    $uAgent = $users['agent'] ?? 'f';
+    $isAllowed = ($pAgent === 'all' || empty($pAgent) || $pAgent === $uAgent || ($pAgent === 'agents' && in_array($uAgent, ['n', 'n2'])));
+    if ($result['TestAccount'] != "ONTestAccount" || !$isAllowed)
         continue;
     if ($result['hide_user'] != null and in_array($from_id, json_decode($result['hide_user'], true)))
         continue;

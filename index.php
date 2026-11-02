@@ -3515,8 +3515,10 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         sendmessage($from_id, $textbotlang['users']['buttonDisabled'], null, 'HTML');
         return;
     }
-    $locationproduct = $pdo->prepare("SELECT * FROM marzban_panel  WHERE status = 'active' AND (agent = ? OR agent = 'all') ORDER BY display_order, id");
+    $isAgentGroup = in_array($user['agent'], ['n', 'n2']) ? 'agents' : '___none___';
+    $locationproduct = $pdo->prepare("SELECT * FROM marzban_panel  WHERE status = 'active' AND (agent = ? OR agent = 'all' OR agent = ?) ORDER BY display_order, id");
     $locationproduct->bindValue(1, $user['agent'], PDO::PARAM_STR);
+    $locationproduct->bindValue(2, $isAgentGroup, PDO::PARAM_STR);
     $locationproduct->execute();
     if (($locationproduct)->rowCount() == 0) {
         sendmessage($from_id, $textbotlang['users']['sell']['nullPanel'], null, 'HTML');
@@ -3752,8 +3754,9 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
     if ($setting['statuscategorygenral'] == "oncategorys") {
         savedata("save", "monthproduct", $monthenumber);
         $marzban_list_get = select("marzban_panel", "*", "name_panel", $userdate['name_panel'], "select");
-        $stmt = $pdo->prepare("SELECT * FROM marzban_panel  WHERE status = 'active' AND (agent = :mp3 OR agent = 'all') ORDER BY display_order, id");
-        $stmt->execute([':mp3' => $user['agent']]);
+        $isAgentGroup = in_array($user['agent'], ['n', 'n2']) ? 'agents' : '___none___';
+        $stmt = $pdo->prepare("SELECT * FROM marzban_panel  WHERE status = 'active' AND (agent = :mp3 OR agent = 'all' OR agent = :ag_group) ORDER BY display_order, id");
+        $stmt->execute([':mp3' => $user['agent'], ':ag_group' => $isAgentGroup]);
         $count_panel = $stmt->rowCount();
         if ($count_panel == 1) {
             $back = "buybacktow";
@@ -3855,7 +3858,7 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         deletemessage($from_id, $message_id);
     }
     sendmessage($from_id, $textbotlang['users']['selectusername'], $backuser, 'html');
-} elseif (preg_match('/^changeuserlimit_(.*)/', $datain, $dataget) || (preg_match('/^prodcutservice_(.*)/', $datain, $dataget) && ($chk_userdate = json_decode($user['Processing_value'], true)) && ($chk_panel = select("marzban_panel", "*", "name_panel", $chk_userdate['name_panel'] ?? '', "select")) && ($chk_panel['type'] ?? '') == "x-ui_single" && !isset($chk_userdate['user_limit_selected']))) {
+} elseif (preg_match('/^changeuserlimit_(.*)/', $datain, $dataget) || (preg_match('/^prodcutservice_(.*)/', $datain, $dataget) && ($chk_userdate = json_decode($user['Processing_value'], true)) && ($chk_panel = select("marzban_panel", "*", "name_panel", $chk_userdate['name_panel'] ?? '', "select")) && ($chk_panel['type'] ?? '') == "x-ui_single" && !isset($chk_userdate['user_limit_selected']) && (($chk_prod = select("product", "*", "code_product", $dataget[1], "select")) && intval($chk_prod['limit_ip'] ?? 1) !== 0))) {
     $prodcut = $dataget[1];
     $userdate = json_decode($user['Processing_value'], true);
     if (!is_array($userdate)) { $userdate = []; }
@@ -4019,20 +4022,27 @@ process_preinvoice_label:
     if (intval($info_product['Volume_constraint']) == 0) {
         $textin = str_replace($textbotlang['common']['units']['gb'], "", $textin);
     }
-    $chosen_limit = intval($userdate['user_limit'] ?? $info_product['limit_ip'] ?? 1);
-    if ($chosen_limit <= 0) { $chosen_limit = 1; }
-    $userLimitLine = ($chosen_limit > 1) ? "👥 تعداد کاربر: <b>{$chosen_limit} کاربره</b>\n" : "👥 تعداد کاربر: <b>۱ کاربره (تک کاربر)</b>\n";
+    $isUnlimited = isset($info_product['limit_ip']) && (intval($info_product['limit_ip']) === 0);
+    if ($isUnlimited) {
+        $chosen_limit = 0;
+        $userLimitLine = "👥 تعداد کاربر: <b>بدون محدودیت کاربر (نامحدود)</b>\n";
+    } else {
+        $chosen_limit = intval($userdate['user_limit'] ?? $info_product['limit_ip'] ?? 1);
+        if ($chosen_limit <= 0) { $chosen_limit = 1; }
+        $userLimitLine = ($chosen_limit > 1) ? "👥 تعداد کاربر: <b>{$chosen_limit} کاربره</b>\n" : "👥 تعداد کاربر: <b>۱ کاربره (تک کاربر)</b>\n";
+    }
     $textin = preg_replace('/(👤 نام کاربری:[^\n]+\n)/u', '$1' . $userLimitLine, $textin, 1);
 
     if ($marzban_list_get['type'] == 'x-ui_single') {
-        $user_payment_kb = json_encode([
-            'inline_keyboard' => [
-                [['text' => $textbotlang['keyboard']['payAndGetService'], 'callback_data' => "confirmandgetservice"]],
-                [['text' => "👥 تغییر تعداد کاربر (فعلی: {$chosen_limit} کاربر)", 'callback_data' => "changeuserlimit_{$loc}"]],
-                [['text' => $textbotlang['keyboard']['registerDiscountCode'], 'callback_data' => "aptdc"]],
-                [['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"]]
-            ]
-        ]);
+        $kb_buttons = [
+            [['text' => $textbotlang['keyboard']['payAndGetService'], 'callback_data' => "confirmandgetservice"]]
+        ];
+        if (!$isUnlimited) {
+            $kb_buttons[] = [['text' => "👥 تغییر تعداد کاربر (فعلی: {$chosen_limit} کاربر)", 'callback_data' => "changeuserlimit_{$loc}"]];
+        }
+        $kb_buttons[] = [['text' => $textbotlang['keyboard']['registerDiscountCode'], 'callback_data' => "aptdc"]];
+        $kb_buttons[] = [['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"]];
+        $user_payment_kb = json_encode(['inline_keyboard' => $kb_buttons]);
     } else {
         $user_payment_kb = $payment;
     }

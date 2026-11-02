@@ -17,11 +17,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add')
     exit;
   }
   $code = bin2hex(random_bytes(2));
+  $limit_ip = isset($_POST['limit_ip']) ? (int) $_POST['limit_ip'] : 1;
   try {
     db_query(
       $pdo,
-      "INSERT INTO product (name_product,code_product,price_product,Volume_constraint,Service_time,Location,agent,data_limit_reset,note,category,hide_panel,one_buy_status) VALUES (?,?,?,?,?,?,?,'no_reset',?,?,'{}','0')",
-      [$name, $code, (int) ($_POST['price_product'] ?? 0), (int) ($_POST['volume_product'] ?? 0), (int) ($_POST['time_product'] ?? 0), $_POST['namepanel'] ?? '', $_POST['agent_product'] ?? '', $_POST['note_product'] ?? '', $_POST['category_product'] ?? '']
+      "INSERT INTO product (name_product,code_product,price_product,Volume_constraint,Service_time,Location,agent,data_limit_reset,note,category,hide_panel,one_buy_status,limit_ip) VALUES (?,?,?,?,?,?,?,'no_reset',?,?,'{}','0',?)",
+      [$name, $code, (int) ($_POST['price_product'] ?? 0), (int) ($_POST['volume_product'] ?? 0), (int) ($_POST['time_product'] ?? 0), $_POST['namepanel'] ?? '', $_POST['agent_product'] ?? '', $_POST['note_product'] ?? '', $_POST['category_product'] ?? '', $limit_ip]
     );
     db_query($pdo, "UPDATE product SET display_order = id WHERE id = ?", [$pdo->lastInsertId()]);
     flash('success', $textbotlang['panel']['productAddedPrefix'] . $name . $textbotlang['panel']['productAddedSuffix']);
@@ -39,10 +40,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit'
   if ($pid && $name !== '') {
     try {
       $pdo->beginTransaction();
+      $limit_ip = isset($_POST['limit_ip']) ? (int) $_POST['limit_ip'] : 1;
       db_query(
         $pdo,
-        "UPDATE product SET name_product=?,price_product=?,Volume_constraint=?,Service_time=?,Location=?,agent=?,note=?,category=? WHERE id=?",
-        [$name, (int) ($_POST['price_product'] ?? 0), (int) ($_POST['volume_product'] ?? 0), (int) ($_POST['time_product'] ?? 0), $_POST['namepanel'] ?? '', $_POST['agent_product'] ?? '', $_POST['note_product'] ?? '', $_POST['category_product'] ?? '', $pid]
+        "UPDATE product SET name_product=?,price_product=?,Volume_constraint=?,Service_time=?,Location=?,agent=?,note=?,category=?,limit_ip=? WHERE id=?",
+        [$name, (int) ($_POST['price_product'] ?? 0), (int) ($_POST['volume_product'] ?? 0), (int) ($_POST['time_product'] ?? 0), $_POST['namepanel'] ?? '', $_POST['agent_product'] ?? '', $_POST['note_product'] ?? '', $_POST['category_product'] ?? '', $limit_ip, $pid]
       );
       if (isset($_POST['position'])) {
         move_display_order($pdo, 'product', $pid, (int) $_POST['position']);
@@ -124,6 +126,7 @@ include __DIR__ . '/inc/layout_head.php';
             <th><?= $textbotlang['panel']['productNoProductYet'] ?></th>
             <th><?= $textbotlang['panel']['productAddProductTitle'] ?></th>
             <th><?= $textbotlang['panel']['productEditProductTitle'] ?></th>
+            <th>تعداد کاربر</th>
             <th><?= $textbotlang['panel']['productFieldProductName'] ?></th>
             <th><?= $textbotlang['panel']['productFieldVolumeGb'] ?></th>
           </tr>
@@ -141,6 +144,17 @@ include __DIR__ . '/inc/layout_head.php';
               <td><?php if (!empty($p['category'])): ?><span
                     class="tag tag-info"><?= htmlspecialchars($p['category']) ?></span><?php else: ?><span
                     class="cf">—</span><?php endif; ?></td>
+              <td>
+                <?php
+                $lip = (int) ($p['limit_ip'] ?? 1);
+                if ($lip === 0): ?>
+                  <span class="tag tag-success">نامحدود</span>
+                <?php elseif ($lip === -1): ?>
+                  <span class="tag tag-warning">انتخاب کاربر (۱-۵)</span>
+                <?php else: ?>
+                  <span class="tag tag-info"><?= $lip ?> کاربره</span>
+                <?php endif; ?>
+              </td>
               <td class="cm" style="font-size:.72rem"><?= htmlspecialchars($p['code_product'] ?? '') ?></td>
               <td>
                 <div style="display:flex;gap:5px">
@@ -219,6 +233,18 @@ include __DIR__ . '/inc/layout_head.php';
               <option value="n2"><?= $textbotlang['panel']['productColCategory'] ?></option>
             </select>
           </div>
+          <div class="field">
+            <label>تعداد کاربر (محدودیت IP)</label>
+            <select name="limit_ip" class="select" id="add_limit_ip">
+              <option value="0">بدون محدودیت کاربر (نامحدود)</option>
+              <option value="1" selected>۱ کاربره (پیش‌فرض)</option>
+              <option value="2">۲ کاربره</option>
+              <option value="3">۳ کاربره</option>
+              <option value="4">۴ کاربره</option>
+              <option value="5">۵ کاربره</option>
+              <option value="-1">انتخاب توسط مشتری (۱ تا ۵ کاربره با افزایش تعرفه)</option>
+            </select>
+          </div>
           <div class="field full">
             <label><?= $textbotlang['panel']['productColDescription'] ?></label>
             <input type="text" name="note_product" class="input" placeholder="<?= htmlspecialchars($textbotlang['panel']['productDescriptionOptional']) ?>">
@@ -292,6 +318,18 @@ include __DIR__ . '/inc/layout_head.php';
               <option value="f"><?= $textbotlang['panel']['productDetailDescription'] ?></option>
               <option value="n"><?= $textbotlang['panel']['productDetailNote'] ?></option>
               <option value="n2"><?= $textbotlang['panel']['productCloseBtn'] ?></option>
+            </select>
+          </div>
+          <div class="field">
+            <label>تعداد کاربر (محدودیت IP)</label>
+            <select name="limit_ip" class="select" id="edit_limit_ip">
+              <option value="0">بدون محدودیت کاربر (نامحدود)</option>
+              <option value="1">۱ کاربره</option>
+              <option value="2">۲ کاربره</option>
+              <option value="3">۳ کاربره</option>
+              <option value="4">۴ کاربره</option>
+              <option value="5">۵ کاربره</option>
+              <option value="-1">انتخاب توسط مشتری (۱ تا ۵ کاربره با افزایش تعرفه)</option>
             </select>
           </div>
           <div class="field full">

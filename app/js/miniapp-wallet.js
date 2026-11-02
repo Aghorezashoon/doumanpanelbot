@@ -559,6 +559,251 @@
         }
     }
 
+    // Multi-user pricing calculation (+150k for user 2, +150k for user 3, +100k for user 4, +100k for user 5)
+    function calcUserPrice(basePrice, userCount) {
+        basePrice = Number(basePrice) || 0;
+        userCount = parseInt(userCount, 10) || 1;
+        if (userCount <= 1) return basePrice;
+        let extra = 0;
+        const extraUsers = userCount - 1;
+        for (let i = 1; i <= extraUsers; i++) {
+            if (i <= 2) {
+                extra += 150000;
+            } else {
+                extra += 100000;
+            }
+        }
+        return basePrice + extra;
+    }
+
+    // Setup Axios request and response interceptors
+    function setupApiInterceptors() {
+        if (!window.__douman_api || window.__douman_interceptors_done) return;
+        window.__douman_interceptors_done = true;
+
+        // Response interceptor: cache returned products
+        window.__douman_api.interceptors.response.use((response) => {
+            try {
+                if (response.config && response.config.params && response.config.params.actions === 'services') {
+                    if (response.data && Array.isArray(response.data.obj)) {
+                        window.__douman_services_cache = response.data.obj;
+                    }
+                }
+            } catch (e) {}
+            return response;
+        }, (err) => Promise.reject(err));
+
+        // Request interceptor: attach selected user_limit to purchase
+        window.__douman_api.interceptors.request.use((config) => {
+            try {
+                if (config.data && (config.data.actions === 'purchase' || config.data.actions === 'buy')) {
+                    if (window.__selected_user_limit !== undefined && window.__selected_user_limit !== null) {
+                        config.data.user_limit = window.__selected_user_limit;
+                    }
+                }
+            } catch (e) {}
+            return config;
+        }, (err) => Promise.reject(err));
+    }
+
+    // Enhance Step 5 (Order Confirmation) with Multi-User selector
+    function enhanceStep5MultiUser() {
+        setupApiInterceptors();
+
+        // Check if we are on confirmation screen (Look for "خلاصه سفارش")
+        const allHeadings = Array.from(document.querySelectorAll('h2, h3, div, span'));
+        const summaryHeading = allHeadings.find(el => (el.textContent || '').trim() === 'خلاصه سفارش');
+        if (!summaryHeading) {
+            return;
+        }
+
+        // Find the card container containing summaryHeading
+        const card = summaryHeading.closest('div.border, div.rounded-lg, div.rounded-xl, div.bg-card') || summaryHeading.parentElement?.parentElement;
+        if (!card) return;
+
+        // Find the total price container (contains "قیمت کل:")
+        const allSpans = Array.from(card.querySelectorAll('span, div'));
+        const totalLabelSpan = allSpans.find(el => (el.textContent || '').trim().startsWith('قیمت کل'));
+        if (!totalLabelSpan) return;
+
+        const totalRow = totalLabelSpan.closest('div.flex.justify-between') || totalLabelSpan.parentElement;
+        if (!totalRow) return;
+
+        // Find price element inside totalRow
+        const priceEl = totalRow.querySelector('.text-primary') || totalRow.lastElementChild;
+        if (!priceEl) return;
+
+        // Find service name from the summary card
+        let serviceName = '';
+        const serviceLabel = allSpans.find(el => (el.textContent || '').trim() === 'سرویس:');
+        if (serviceLabel && serviceLabel.nextElementSibling) {
+            serviceName = (serviceLabel.nextElementSibling.textContent || '').trim();
+        }
+
+        // If card already inserted for this exact service, just keep it
+        const existingCard = document.getElementById('douman-multiuser-card');
+        if (existingCard) {
+            if (existingCard.getAttribute('data-service') === serviceName) {
+                return;
+            } else {
+                existingCard.remove();
+            }
+        }
+
+        // Extract base price
+        const rawText = toEnglishDigits(priceEl.textContent.replace(/[^0-9۰-۹]/g, ''));
+        const currentPriceVal = parseInt(rawText, 10);
+        if (!currentPriceVal || isNaN(currentPriceVal)) return;
+
+        // Look up product in cache to check limit_ip
+        const cachedProduct = (window.__douman_services_cache || []).find(p => p.name === serviceName);
+        const prodLimit = cachedProduct ? parseInt(cachedProduct.limit_ip, 10) : 1;
+
+        window.__current_base_price = currentPriceVal;
+        window.__current_service_name = serviceName;
+
+        const container = document.createElement('div');
+        container.id = 'douman-multiuser-card';
+        container.setAttribute('data-service', serviceName);
+        container.style.cssText = `
+            margin: 14px 0 10px 0;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            box-sizing: border-box;
+        `;
+
+        if (prodLimit === 0) {
+            // Unlimited users
+            window.__selected_user_limit = 0;
+            container.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="font-size: 22px;">👥</div>
+                    <div>
+                        <div style="font-weight: 700; color: #10b981; font-size: 13px;">بدون محدودیت کاربر (اتصال همزمان نامحدود)</div>
+                        <div style="font-size: 11px; color: #a1a1aa; margin-top: 2px;">این سرویس به صورت نامحدود و بدون محدودیت IP تنظیم می‌شود.</div>
+                    </div>
+                </div>
+            `;
+        } else {
+            // Multi-user choice (1 to 5)
+            window.__selected_user_limit = 1;
+            container.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <div style="font-weight: 700; font-size: 13px; color: #f4f4f5; display:flex; align-items:center; gap:6px;">
+                        <span>👥</span>
+                        <span>تعداد کاربر مجاز (اتصال همزمان)</span>
+                    </div>
+                    <span id="douman-user-count-badge" style="
+                        font-size: 11px;
+                        font-weight: 700;
+                        background: rgba(59, 130, 246, 0.2);
+                        color: #60a5fa;
+                        border: 1px solid #3b82f6;
+                        padding: 2px 8px;
+                        border-radius: 20px;
+                    ">۱ کاربره</span>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;" id="douman-pills-row">
+                    <button type="button" class="douman-user-pill active" data-u="1" style="
+                        background: rgba(59, 130, 246, 0.25);
+                        border: 1.5px solid #3b82f6;
+                        border-radius: 10px;
+                        padding: 8px 2px;
+                        color: #fff;
+                        cursor: pointer;
+                        text-align: center;
+                    ">
+                        <div style="font-weight: 800; font-size: 13px;">۱</div>
+                        <div style="font-size: 9px; color: #93c5fd; margin-top: 2px;">تک کاربر</div>
+                    </button>
+                    <button type="button" class="douman-user-pill" data-u="2" style="
+                        background: rgba(255, 255, 255, 0.04);
+                        border: 1px solid rgba(255, 255, 255, 0.12);
+                        border-radius: 10px;
+                        padding: 8px 2px;
+                        color: #d4d4d8;
+                        cursor: pointer;
+                        text-align: center;
+                    ">
+                        <div style="font-weight: 800; font-size: 13px;">۲</div>
+                        <div style="font-size: 9px; color: #10b981; margin-top: 2px;">+۱۵۰ ت</div>
+                    </button>
+                    <button type="button" class="douman-user-pill" data-u="3" style="
+                        background: rgba(255, 255, 255, 0.04);
+                        border: 1px solid rgba(255, 255, 255, 0.12);
+                        border-radius: 10px;
+                        padding: 8px 2px;
+                        color: #d4d4d8;
+                        cursor: pointer;
+                        text-align: center;
+                    ">
+                        <div style="font-weight: 800; font-size: 13px;">۳</div>
+                        <div style="font-size: 9px; color: #10b981; margin-top: 2px;">+۳۰۰ ت</div>
+                    </button>
+                    <button type="button" class="douman-user-pill" data-u="4" style="
+                        background: rgba(255, 255, 255, 0.04);
+                        border: 1px solid rgba(255, 255, 255, 0.12);
+                        border-radius: 10px;
+                        padding: 8px 2px;
+                        color: #d4d4d8;
+                        cursor: pointer;
+                        text-align: center;
+                    ">
+                        <div style="font-weight: 800; font-size: 13px;">۴</div>
+                        <div style="font-size: 9px; color: #10b981; margin-top: 2px;">+۴۰۰ ت</div>
+                    </button>
+                    <button type="button" class="douman-user-pill" data-u="5" style="
+                        background: rgba(255, 255, 255, 0.04);
+                        border: 1px solid rgba(255, 255, 255, 0.12);
+                        border-radius: 10px;
+                        padding: 8px 2px;
+                        color: #d4d4d8;
+                        cursor: pointer;
+                        text-align: center;
+                    ">
+                        <div style="font-weight: 800; font-size: 13px;">۵</div>
+                        <div style="font-size: 9px; color: #10b981; margin-top: 2px;">+۵۰۰ ت</div>
+                    </button>
+                </div>
+                <div style="font-size: 11px; color: #71717a; margin-top: 8px; text-align: center;">
+                    کاربر اضافه ۱ و ۲: نفری ۱۵۰,۰۰۰ ت • کاربر ۳ تا ۵: نفری ۱۰۰,۰۰۰ ت
+                </div>
+            `;
+
+            // Setup click events on pills
+            const pills = container.querySelectorAll('.douman-user-pill');
+            pills.forEach(pill => {
+                pill.addEventListener('click', () => {
+                    const chosen = parseInt(pill.getAttribute('data-u'), 10) || 1;
+                    window.__selected_user_limit = chosen;
+
+                    // Update pills appearance
+                    pills.forEach(p => {
+                        const isThis = p === pill;
+                        p.style.background = isThis ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.04)';
+                        p.style.border = isThis ? '1.5px solid #3b82f6' : '1px solid rgba(255, 255, 255, 0.12)';
+                        p.style.color = isThis ? '#fff' : '#d4d4d8';
+                    });
+
+                    // Update badge
+                    const badge = container.querySelector('#douman-user-count-badge');
+                    if (badge) {
+                        badge.textContent = chosen + ' کاربره';
+                    }
+
+                    // Update total price text in order summary card
+                    const newTotal = calcUserPrice(window.__current_base_price, chosen);
+                    priceEl.textContent = formatMoney(newTotal) + ' تومان';
+                });
+            });
+        }
+
+        // Insert container right before totalRow
+        totalRow.parentNode.insertBefore(container, totalRow);
+    }
+
     // Periodic observer for page navigation and layout updates
     let pollInterval = null;
     function startObserver() {
@@ -567,6 +812,7 @@
             injectHeaderWallet();
             enhanceAccountPage();
             enhancePurchaseSuccessScreen();
+            enhanceStep5MultiUser();
         }, 800);
 
         // Also refresh balance initially and every 30 seconds

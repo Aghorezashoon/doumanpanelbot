@@ -9,6 +9,11 @@ window.openEditModal = function (p) {
     document.getElementById('edit_note').value = p.note || '';
     document.getElementById('edit_position').value = p.position || '';
 
+    var lipSel = document.getElementById('edit_limit_ip');
+    if (lipSel) {
+        lipSel.value = (p.limit_ip !== undefined && p.limit_ip !== null) ? String(p.limit_ip) : '1';
+    }
+
     var sel = document.getElementById('edit_panel');
     if (sel) {
         for (var i = 0; i < sel.options.length; i++) {

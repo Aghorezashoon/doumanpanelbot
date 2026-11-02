@@ -381,8 +381,10 @@ function mini_countries(array $data, string $method): void
     }
     $user_info = select("user", "*", "token", $tokencheck, "select");
     if ($user_info) {
-        $stmt = $pdo->prepare("SELECT * FROM marzban_panel WHERE status = 'active' AND (agent = :agent OR agent = 'all') AND type != 'Manualsale' ORDER BY display_order, id");
+        $isAgentGroup = in_array($user_info['agent'], ['n', 'n2']) ? 'agents' : '___none___';
+        $stmt = $pdo->prepare("SELECT * FROM marzban_panel WHERE status = 'active' AND (agent = :agent OR agent = 'all' OR agent = :ag_group) AND type != 'Manualsale' ORDER BY display_order, id");
         $stmt->bindParam(':agent', $user_info['agent']);
+        $stmt->bindParam(':ag_group', $isAgentGroup);
         $stmt->execute();
         $panel_list = [];
         $setting = select("setting", "*", null, null, "select");
@@ -714,7 +716,8 @@ function mini_services(array $data, string $method): void
                 'time_days' => intval($result['Service_time']),
                 'category_id' => $selected_category_id,
                 'country_id' => $panel['code_panel'],
-                'time_range_id' => $result['Service_time']
+                'time_range_id' => $result['Service_time'],
+                'limit_ip' => isset($result['limit_ip']) ? intval($result['limit_ip']) : 1
 
             ];
         }
@@ -815,7 +818,10 @@ function mini_purchase(array $data, string $method): void
         return;
     }
     $hidden_users = json_decode($panel['hide_user'] ?? '', true);
-    if ($panel['status'] != "active" || !in_array($panel['agent'], [$usercheck['agent'], 'all']) || $panel['type'] == "Manualsale" || (is_array($hidden_users) && in_array($usercheck['id'], $hidden_users))) {
+    $pAgent = $panel['agent'] ?? 'all';
+    $uAgent = $usercheck['agent'] ?? 'f';
+    $panelAllowed = ($pAgent === 'all' || empty($pAgent) || $pAgent === $uAgent || ($pAgent === 'agents' && in_array($uAgent, ['n', 'n2'])));
+    if ($panel['status'] != "active" || !$panelAllowed || $panel['type'] == "Manualsale" || (is_array($hidden_users) && in_array($usercheck['id'], $hidden_users))) {
         http_response_code(500);
         echo json_encode(array(
             'status' => false,
@@ -938,6 +944,20 @@ function mini_purchase(array $data, string $method): void
         $product['price_product'] = $product['price_product'] - $result;
         sendmessage($user_info['id'], sprintf($textbotlang['users']['Discount']['discountapplied'], $user_info['pricediscount']), null, 'HTML');
     }
+
+    // Multi-user calculation (1 to 5 users or 0 unlimited)
+    $prod_limit = isset($product['limit_ip']) ? intval($product['limit_ip']) : 1;
+    if ($prod_limit === 0) {
+        $user_limit = 0;
+    } else {
+        $user_limit = isset($data['user_limit']) ? intval($data['user_limit']) : ($prod_limit > 0 ? $prod_limit : 1);
+        if ($user_limit < 1 || $user_limit > 5) {
+            $user_limit = ($prod_limit > 0 ? $prod_limit : 1);
+        }
+        if ($user_limit > 1) {
+            $product['price_product'] = calculateUserLimitPrice($product['price_product'], $user_limit);
+        }
+    }
     $price_product = $product['price_product'];
 
     $charged = false;
@@ -1008,11 +1028,11 @@ function mini_purchase(array $data, string $method): void
             'volume' => false,
             'time' => false,
         ));
-        $stmt = $pdo->prepare("INSERT IGNORE INTO invoice (id_user, id_invoice, username,time_sell, Service_location, name_product, price_product, Volume, Service_time,Status,note,refral,notifctions) VALUES (?, ?, ?, ?, ?, ?, ?, ?,?,?,?,?,?)");
+        $stmt = $pdo->prepare("INSERT IGNORE INTO invoice (id_user, id_invoice, username,time_sell, Service_location, name_product, price_product, Volume, Service_time,Status,note,refral,notifctions,limit_ip) VALUES (?, ?, ?, ?, ?, ?, ?, ?,?,?,?,?,?,?)");
         $Status = "active";
         $date = time();
         $custom_note = isset($data['custom_note']) && strlen(strval($data['custom_note'])) > 1 ? $data['custom_note'] : null;
-        $stmt->execute([$user_info['id'], $randomString, $username_ac, $date, $panel['name_panel'], $product['name_product'], $price_product, $product['Volume_constraint'], $product['Service_time'], $Status, $custom_note, $user_info['affiliates'], $notifctions]);
+        $stmt->execute([$user_info['id'], $randomString, $username_ac, $date, $panel['name_panel'], $product['name_product'], $price_product, $product['Volume_constraint'], $product['Service_time'], $Status, $custom_note, $user_info['affiliates'], $notifctions, $user_limit]);
         $datetimestep = strtotime("+" . $product['Service_time'] . "days");
         if ($product['Service_time'] == 0) {
             $datetimestep = 0;
@@ -1024,7 +1044,8 @@ function mini_purchase(array $data, string $method): void
             'data_limit' => $product['Volume_constraint'] * pow(1024, 3),
             'from_id' => $user_info['id'],
             'username' => $user_info['username'],
-            'type' => 'buy'
+            'type' => 'buy',
+            'limitip' => $user_limit
         );
         $dataoutput = $ManagePanel->createUser($panel['name_panel'], $product['code_product'], $username_ac, $datac);
         if (!is_array($dataoutput) || ($dataoutput['username'] ?? null) == null) {
