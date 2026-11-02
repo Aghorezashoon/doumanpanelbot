@@ -19,7 +19,9 @@ class XuiSinglePanelDriver extends BasePanelDriver
         } else {
             $inbounds = $Get_Data_Panel['inbounds'];
         }
-        $data_Output = addClient($Get_Data_Panel, $usernameC, $expire, $subId, $data_limit, $inbounds, $Get_Data_Product['name_product'], $note);
+        $limitip = intval($vars['limitip'] ?? $vars['limit_ip'] ?? $vars['Data_Config']['limitip'] ?? $Get_Data_Product['limit_ip'] ?? 1);
+        if ($limitip <= 0) { $limitip = 1; }
+        $data_Output = addClient($Get_Data_Panel, $usernameC, $expire, $subId, $data_limit, $inbounds, $Get_Data_Product['name_product'], $note, $limitip);
         if (!empty($data_Output['error'])) {
             return array(
                 'status' => 'Unsuccessful',

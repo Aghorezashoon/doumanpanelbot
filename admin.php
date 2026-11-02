@@ -1625,11 +1625,25 @@ elseif ($datain == "systemsms") {
         step('getnote', $from_id);
         return;
     }
+    if ($panel['type'] == "x-ui_single") {
+        sendmessage($from_id, "👥 <b>تعداد کاربر مجاز (پیش‌فرض) این محصول را وارد کنید:</b>\n(مثلاً برای تک کاربره عدد 1 را بفرستید)", $backadmin, 'HTML');
+        step('getlimitip_xui', $from_id);
+        return;
+    }
+    savedata("save", "data_limit_reset", "no_reset");
+    savedata("save", "limit_ip", "1");
+    sendmessage($from_id, $textbotlang['Admin']['Product']['askNote'], $backadmin, 'HTML');
+    step('endstep', $from_id);
+} elseif ($user['step'] == "getlimitip_xui") {
+    $limitip = intval($text);
+    if ($limitip <= 0) { $limitip = 1; }
+    savedata("save", "limit_ip", (string)$limitip);
     savedata("save", "data_limit_reset", "no_reset");
     sendmessage($from_id, $textbotlang['Admin']['Product']['askNote'], $backadmin, 'HTML');
     step('endstep', $from_id);
 } elseif ($user['step'] == "getnote") {
     savedata("save", "data_limit_reset", $text);
+    savedata("save", "limit_ip", "1");
     sendmessage($from_id, $textbotlang['Admin']['Product']['askNote2'], $backadmin, 'HTML');
     step('endstep', $from_id);
 } elseif ($user['step'] == "endstep") {
@@ -1638,7 +1652,9 @@ elseif ($datain == "systemsms") {
     $varhide_panel = "{}";
     if (!isset($userdata['category']))
         $userdata['category'] = null;
-    $stmt = $pdo->prepare("INSERT IGNORE INTO product (name_product,code_product,price_product,Volume_constraint,Service_time,Location,agent,data_limit_reset,note,category,hide_panel,one_buy_status) VALUES (:name_product,:code_product,:price_product,:Volume_constraint,:Service_time,:Location,:agent,:data_limit_reset,:note,:category,:hide_panel,'0')");
+    $limit_ip = intval($userdata['limit_ip'] ?? 1);
+    if ($limit_ip <= 0) { $limit_ip = 1; }
+    $stmt = $pdo->prepare("INSERT IGNORE INTO product (name_product,code_product,price_product,Volume_constraint,Service_time,Location,agent,data_limit_reset,note,category,hide_panel,one_buy_status,limit_ip) VALUES (:name_product,:code_product,:price_product,:Volume_constraint,:Service_time,:Location,:agent,:data_limit_reset,:note,:category,:hide_panel,'0',:limit_ip)");
     $stmt->bindParam(':name_product', $userdata['name_product']);
     $stmt->bindParam(':code_product', $randomString);
     $stmt->bindParam(':price_product', $userdata['price_product']);
@@ -1650,6 +1666,7 @@ elseif ($datain == "systemsms") {
     $stmt->bindParam(':category', $userdata['category'], PDO::PARAM_STR);
     $stmt->bindParam(':note', $text, PDO::PARAM_STR);
     $stmt->bindParam(':hide_panel', $varhide_panel, PDO::PARAM_STR);
+    $stmt->bindValue(':limit_ip', $limit_ip, PDO::PARAM_INT);
     $stmt->execute();
     $pdo->prepare("UPDATE product SET display_order = id WHERE id = ?")->execute([$pdo->lastInsertId()]);
     sendmessage($from_id, $textbotlang['Admin']['Product']['saveProduct'], $shopkeyboard, 'HTML');

@@ -938,6 +938,25 @@ function createPayiranpay4($price, $order_id)
     return $decoded;
 }
 
+function calculateUserLimitPrice($basePrice, $userCount)
+{
+    $basePrice = intval($basePrice);
+    $userCount = intval($userCount);
+    if ($userCount <= 1) {
+        return $basePrice;
+    }
+    $extraUsers = $userCount - 1;
+    $extra = 0;
+    for ($i = 1; $i <= $extraUsers; $i++) {
+        if ($i <= 2) {
+            $extra += 150000;
+        } else {
+            $extra += 100000;
+        }
+    }
+    return $basePrice + $extra;
+}
+
 function cubepay($order_id, $price, $customer_user_id)
 {
     global $domainhosts;
@@ -1218,12 +1237,15 @@ function DirectPayment($order_id, $image = 'images.jpg')
         } else {
             $timestamp = strtotime(date("Y-m-d H:i:s", $date));
         }
+        $limitip = intval($get_invoice['limit_ip'] ?? 1);
+        if ($limitip <= 0) { $limitip = 1; }
         $datac = array(
             'expire' => $timestamp,
             'data_limit' => $get_invoice['Volume'] * pow(1024, 3),
             'from_id' => $Balance_id['id'],
             'username' => $Balance_id['username'],
-            'type' => 'buy'
+            'type' => 'buy',
+            'limitip' => $limitip
         );
         $invoiceStatusBefore = $get_invoice['Status'] ?? null;
         $claimInvoice = $pdo->prepare("UPDATE invoice SET Status = 'active' WHERE id_invoice = ? AND Status <> 'active'");

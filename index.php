@@ -3855,7 +3855,67 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         deletemessage($from_id, $message_id);
     }
     sendmessage($from_id, $textbotlang['users']['selectusername'], $backuser, 'html');
+} elseif (preg_match('/^changeuserlimit_(.*)/', $datain, $dataget) || (preg_match('/^prodcutservice_(.*)/', $datain, $dataget) && ($chk_userdate = json_decode($user['Processing_value'], true)) && ($chk_panel = select("marzban_panel", "*", "name_panel", $chk_userdate['name_panel'] ?? '', "select")) && ($chk_panel['type'] ?? '') == "x-ui_single" && !isset($chk_userdate['user_limit_selected']))) {
+    $prodcut = $dataget[1];
+    $userdate = json_decode($user['Processing_value'], true);
+    if (!is_array($userdate)) { $userdate = []; }
+    $stmt = $pdo->prepare("SELECT * FROM product WHERE code_product = :code_product AND (Location = :location OR Location = '/all') LIMIT 1");
+    $stmt->bindValue(':code_product', $prodcut, PDO::PARAM_STR);
+    $stmt->bindValue(':location', $userdate['name_panel'] ?? '', PDO::PARAM_STR);
+    $stmt->execute();
+    $info_product = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$info_product) {
+        sendmessage($from_id, $textbotlang['users']['sell']['productNotFound'], null, 'HTML');
+        return;
+    }
+    $base_price = intval($info_product['price_product']);
+    $p1 = number_format(calculateUserLimitPrice($base_price, 1));
+    $p2 = number_format(calculateUserLimitPrice($base_price, 2));
+    $p3 = number_format(calculateUserLimitPrice($base_price, 3));
+    $p4 = number_format(calculateUserLimitPrice($base_price, 4));
+    $p5 = number_format(calculateUserLimitPrice($base_price, 5));
+
+    $userlimit_keyboard = json_encode([
+        'inline_keyboard' => [
+            [['text' => "👤 ۱ کاربره (تک کاربر) — $p1 تومان", 'callback_data' => "selectuserlimit_{$prodcut}_1"]],
+            [['text' => "👥 ۲ کاربره (+۱ کاربر) — $p2 تومان", 'callback_data' => "selectuserlimit_{$prodcut}_2"]],
+            [['text' => "👥 ۳ کاربره (+۲ کاربر) — $p3 تومان", 'callback_data' => "selectuserlimit_{$prodcut}_3"]],
+            [['text' => "👥 ۴ کاربره (+۳ کاربر) — $p4 تومان", 'callback_data' => "selectuserlimit_{$prodcut}_4"]],
+            [['text' => "👥 ۵ کاربره (+۴ کاربر) — $p5 تومان", 'callback_data' => "selectuserlimit_{$prodcut}_5"]],
+            [['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"]]
+        ]
+    ]);
+
+    $prompt_text = "👥 <b>انتخاب تعداد کاربر مجاز (اتصال همزمان):</b>\n\n"
+        . "📦 سرویس: <b>" . htmlspecialchars($info_product['name_product']) . "</b>\n\n"
+        . "لطفاً تعداد کاربران مورد نیاز خود را برای این اشتراک مشخص فرمایید:\n"
+        . "• تعرفه پایه (۱ کاربره): <b>" . number_format($base_price) . " تومان</b>\n"
+        . "• کاربر اضافه اول و دوم: <b>نفری ۱۵۰,۰۰۰ تومان</b>\n"
+        . "• کاربر سوم تا پنجم: <b>نفری ۱۰۰,۰۰۰ تومان</b>";
+
+    Editmessagetext($from_id, $message_id, $prompt_text, $userlimit_keyboard, 'HTML');
+    return;
+} elseif (preg_match('/^selectuserlimit_([^_]+)_([1-5])$/', $datain, $matches)) {
+    $prodcut = $matches[1];
+    $chosen_limit = intval($matches[2]);
+    $userdate = json_decode($user['Processing_value'], true);
+    if (!is_array($userdate)) { $userdate = []; }
+    $userdate['user_limit'] = $chosen_limit;
+    $userdate['user_limit_selected'] = true;
+    update("user", "Processing_value", json_encode($userdate), "id", $from_id);
+    update("user", "Processing_value_one", $prodcut, "id", $from_id);
+    $marzban_list_get = select("marzban_panel", "*", "name_panel", $userdate['name_panel'] ?? '', "select");
+    if (in_array(usernameMethodKey($marzban_list_get['MethodUsername'] ?? ''), ['customUsername', 'customUsernameRandom'], true)) {
+        Editmessagetext($from_id, $message_id, $textbotlang['users']['selectusername'], $backuser, 'html');
+        step('endstepuser', $from_id);
+        return;
+    }
+    // Forward directly to pre-invoice generation with selected product
+    $datain = "prodcutservice_" . $prodcut;
+    $dataget = [null, $prodcut];
+    goto process_preinvoice_label;
 } elseif ($user['step'] == "endstepuser" || $user['step'] == "endstepusers" || preg_match('/prodcutservice_(.*)/', $datain, $dataget) || $user['step'] == "getvolumecustomuser") {
+process_preinvoice_label:
     $userdate = json_decode($user['Processing_value'], true);
     if (!is_array($userdate) || empty($userdate['name_panel'])) {
         sendmessage($from_id, $textbotlang['users']['sell']['panelUnavailable'], $keyboard, 'HTML');
@@ -3921,6 +3981,9 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         sendmessage($from_id, $textbotlang['users']['Balance']['confirmError'], $keyboard, 'HTML');
         return;
     }
+    $chosen_limit = intval($userdate['user_limit'] ?? $info_product['limit_ip'] ?? 1);
+    if ($chosen_limit <= 0) { $chosen_limit = 1; }
+    $info_product['price_product'] = calculateUserLimitPrice($info_product['price_product'], $chosen_limit);
     if (intval($user['pricediscount']) != 0) {
         $resultper = ($info_product['price_product'] * $user['pricediscount']) / 100;
         $info_product['price_product'] = $info_product['price_product'] - $resultper;
@@ -3956,10 +4019,28 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
     if (intval($info_product['Volume_constraint']) == 0) {
         $textin = str_replace($textbotlang['common']['units']['gb'], "", $textin);
     }
-    if ($user['step'] != "getvolumecustomuser" && !in_array(usernameMethodKey($marzban_list_get['MethodUsername']), ['customUsername', 'customUsernameRandom'], true)) {
-        Editmessagetext($from_id, $message_id, $textin, $payment);
+    $chosen_limit = intval($userdate['user_limit'] ?? $info_product['limit_ip'] ?? 1);
+    if ($chosen_limit <= 0) { $chosen_limit = 1; }
+    $userLimitLine = ($chosen_limit > 1) ? "👥 تعداد کاربر: <b>{$chosen_limit} کاربره</b>\n" : "👥 تعداد کاربر: <b>۱ کاربره (تک کاربر)</b>\n";
+    $textin = preg_replace('/(👤 نام کاربری:[^\n]+\n)/u', '$1' . $userLimitLine, $textin, 1);
+
+    if ($marzban_list_get['type'] == 'x-ui_single') {
+        $user_payment_kb = json_encode([
+            'inline_keyboard' => [
+                [['text' => $textbotlang['keyboard']['payAndGetService'], 'callback_data' => "confirmandgetservice"]],
+                [['text' => "👥 تغییر تعداد کاربر (فعلی: {$chosen_limit} کاربر)", 'callback_data' => "changeuserlimit_{$loc}"]],
+                [['text' => $textbotlang['keyboard']['registerDiscountCode'], 'callback_data' => "aptdc"]],
+                [['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"]]
+            ]
+        ]);
     } else {
-        sendmessage($from_id, $textin, $payment, 'HTML');
+        $user_payment_kb = $payment;
+    }
+
+    if ($user['step'] != "getvolumecustomuser" && !in_array(usernameMethodKey($marzban_list_get['MethodUsername']), ['customUsername', 'customUsernameRandom'], true)) {
+        Editmessagetext($from_id, $message_id, $textin, $user_payment_kb);
+    } else {
+        sendmessage($from_id, $textin, $user_payment_kb, 'HTML');
     }
     step('payment', $from_id);
 } elseif ($user['step'] == "payment" && ($datain == "confirmandgetservice" || $datain == "confirmandgetserviceDiscount")) {
@@ -4030,9 +4111,14 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
             sendmessage($from_id, $textbotlang['users']['Discount']['notAllowed'], null, 'HTML');
             return;
         }
-        $priceproduct = max(0, round($info_product['price_product'] - ($discountcode['price'] / 100) * $info_product['price_product']));
+        $chosen_limit = intval($userdate['user_limit'] ?? $info_product['limit_ip'] ?? 1);
+        if ($chosen_limit <= 0) { $chosen_limit = 1; }
+        $calc_base = calculateUserLimitPrice($info_product['price_product'], $chosen_limit);
+        $priceproduct = max(0, round($calc_base - ($discountcode['price'] / 100) * $calc_base));
     } else {
-        $priceproduct = $info_product['price_product'];
+        $chosen_limit = intval($userdate['user_limit'] ?? $info_product['limit_ip'] ?? 1);
+        if ($chosen_limit <= 0) { $chosen_limit = 1; }
+        $priceproduct = calculateUserLimitPrice($info_product['price_product'], $chosen_limit);
     }
     cancelPendingGatewayOrders($from_id);
     $username_ac = strtolower($user['Processing_value_tow']);
@@ -4068,9 +4154,9 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         'volume' => false,
         'time' => false,
     ));
-    $stmt = $pdo->prepare("INSERT IGNORE INTO invoice (id_user, id_invoice, username,time_sell, Service_location, name_product, price_product, Volume, Service_time,Status,note,refral,notifctions) VALUES (?,  ?, ?, ?, ?, ?, ?,?,?,?,?,?,?)");
+    $stmt = $pdo->prepare("INSERT IGNORE INTO invoice (id_user, id_invoice, username,time_sell, Service_location, name_product, price_product, Volume, Service_time,Status,note,refral,notifctions,limit_ip) VALUES (?,  ?, ?, ?, ?, ?, ?,?,?,?,?,?,?,?)");
     $Status = "unpaid";
-    $stmt->execute([$from_id, $randomString, $username_ac, $date, $marzban_list_get['name_panel'], $info_product['name_product'], $priceproduct, $info_product['Volume_constraint'], $info_product['Service_time'], $Status, $userdate['nameconfig'] ?? null, $user['affiliates'], $notifctions]);
+    $stmt->execute([$from_id, $randomString, $username_ac, $date, $marzban_list_get['name_panel'], $info_product['name_product'], $priceproduct, $info_product['Volume_constraint'], $info_product['Service_time'], $Status, $userdate['nameconfig'] ?? null, $user['affiliates'], $notifctions, $chosen_limit]);
     if ($priceproduct > $user['Balance'] && $user['agent'] != "n2" && intval($priceproduct) != 0) {
         $marzbandirectpay = select("shopSetting", "*", "Namevalue", "statusdirectpabuy", "select")['value'];
         $Balance_prim = $priceproduct - $user['Balance'];
@@ -4133,7 +4219,8 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         'data_limit' => $info_product['Volume_constraint'] * pow(1024, 3),
         'from_id' => $from_id,
         'username' => $username,
-        'type' => 'buy'
+        'type' => 'buy',
+        'limitip' => $chosen_limit
     );
     $Shoppinginfo = [
         'inline_keyboard' => [

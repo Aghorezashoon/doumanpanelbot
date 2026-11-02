@@ -18,7 +18,8 @@ return [
         category varchar(400) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,
         hide_panel TEXT NOT NULL,
         status_product varchar(20) NOT NULL DEFAULT 'active',
-        display_order INT NOT NULL DEFAULT 0
+        display_order INT NOT NULL DEFAULT 0,
+        limit_ip INT(11) NOT NULL DEFAULT 1
         SQL,
     'columns' => [
         ['code_product', null, 'varchar(50)'],
@@ -33,5 +34,6 @@ return [
         ['hide_panel', '{}', 'TEXT'],
         ['status_product', 'active', "VARCHAR(20) NOT NULL DEFAULT 'active'"],
         ['display_order', null, 'INT NOT NULL DEFAULT 0'],
+        ['limit_ip', '1', 'INT(11) NOT NULL DEFAULT 1'],
     ],
 ];

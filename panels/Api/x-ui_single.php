@@ -16,7 +16,7 @@ function get_clinets($username, $panel)
     $response = $req->get();
     return $response;
 }
-function addClient($panel, $usernameac, $Expire, $subId, $Total, $inboundid, $name_product, $note = "")
+function addClient($panel, $usernameac, $Expire, $subId, $Total, $inboundid, $name_product, $note = "", $limitip = 1)
 {
     if ($name_product == "usertest") {
         if ($panel['on_hold_test'] == "1") {
@@ -41,6 +41,7 @@ function addClient($panel, $usernameac, $Expire, $subId, $Total, $inboundid, $na
             $timeservice = $Expire * 1000;
         }
     }
+    $limitip = intval($limitip > 0 ? $limitip : 1);
     $data = [
         "email" => $usernameac,
         "totalGB" => $Total,
@@ -48,7 +49,8 @@ function addClient($panel, $usernameac, $Expire, $subId, $Total, $inboundid, $na
         "tgId" => 0,
         "comment" => $note,
         "enable" => true,
-        "subId" => $subId
+        "subId" => $subId,
+        "limitIp" => $limitip
     ];
     $config = array(
         "inboundIds" => json_decode($inboundid, true),

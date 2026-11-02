@@ -64,6 +64,8 @@ class ManagePanel
         }
         $expire = $Data_Config['expire'];
         $data_limit = $Data_Config['data_limit'];
+        $limitip = intval($Data_Config['limitip'] ?? $Data_Config['limit_ip'] ?? $Get_Data_Product['limit_ip'] ?? 1);
+        if ($limitip <= 0) { $limitip = 1; }
         $note = "{$Data_Config['from_id']} | {$Data_Config['username']} | {$Data_Config['type']}";
         $driver = PanelRegistry::driver($Get_Data_Panel['type'], $this);
         if ($driver !== null && ($result = $driver->create(get_defined_vars())) !== BasePanelDriver::UNSUPPORTED) {
