@@ -9,16 +9,15 @@ date_default_timezone_set('Asia/Tehran');
 
 // Shared hosting web cron trigger support
 if (PHP_SAPI !== 'cli') {
-     = ['key'] ?? '';
-    if (file_exists(dirname() . '/config.php')) {
-        @include_once dirname() . '/config.php';
+    $cronKey = $_GET['key'] ?? '';
+    if (file_exists(dirname(__DIR__) . '/config.php')) {
+        @include_once dirname(__DIR__) . '/config.php';
     }
-    if (defined('CRON_SECRET_KEY') && CRON_SECRET_KEY !== '' &&  !== CRON_SECRET_KEY) {
+    if (defined('CRON_SECRET_KEY') && CRON_SECRET_KEY !== '' && $cronKey !== CRON_SECRET_KEY) {
         http_response_code(403);
         die('Unauthorized cron access');
     }
 }
-
 require_once $cronbotDir . '/jobs.php';
 
 $lockFh = fopen($cronbotDir . '/.run.lock', 'c+');
