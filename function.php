@@ -1,5 +1,7 @@
 <?php
-require_once 'vendor/autoload.php';
+if (file_exists(__DIR__ . '/vendor/autoload.php')) {
+    require_once __DIR__ . '/vendor/autoload.php';
+}
 require 'config.php';
 ini_set('error_log', 'error_log');
 
@@ -2418,17 +2420,33 @@ function createqrcode($contents)
             return null;
         }
     }
-    $builder = new Builder(
-        writer: new PngWriter(),
-        writerOptions: [],
-        data: $contents,
-        encoding: new Encoding('UTF-8'),
-        errorCorrectionLevel: ErrorCorrectionLevel::High,
-        size: 500,
-        margin: 10,
-    );
+    if (!class_exists(\Endroid\QrCode\Builder\Builder::class)) {
+        $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=' . urlencode($contents);
+        $context = stream_context_create([
+            'http' => ['timeout' => 5, 'ignore_errors' => true],
+            'ssl' => ['verify_peer' => false, 'verify_peer_name' => false]
+        ]);
+        $qrData = @file_get_contents($qrUrl, false, $context);
+        if ($qrData !== false && strlen($qrData) > 50) {
+            return new class($qrData) {
+                private $data;
+                public function __construct($data) { $this->data = $data; }
+                public function getString() { return $this->data; }
+            };
+        }
+        return null;
+    }
 
     try {
+        $builder = new Builder(
+            writer: new PngWriter(),
+            writerOptions: [],
+            data: $contents,
+            encoding: new Encoding('UTF-8'),
+            errorCorrectionLevel: ErrorCorrectionLevel::High,
+            size: 500,
+            margin: 10,
+        );
         return $builder->build();
     } catch (\Throwable $e) {
         error_log('createqrcode failed: ' . $e->getMessage());
