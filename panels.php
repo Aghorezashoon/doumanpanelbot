@@ -67,6 +67,28 @@ class ManagePanel
         $limitip = intval($Data_Config['limitip'] ?? $Data_Config['limit_ip'] ?? $Get_Data_Product['limit_ip'] ?? 1);
         if ($limitip <= 0) { $limitip = 1; }
         $note = "{$Data_Config['from_id']} | {$Data_Config['username']} | {$Data_Config['type']}";
+        // Check if provider is routed through Central DOUMAN Reseller API
+        $providerCode = $Get_Data_Product['provider'] ?? '';
+        if (empty($providerCode)) {
+            if ($Get_Data_Panel['type'] === 'solidlayer') $providerCode = 'solidlayer';
+            elseif ($Get_Data_Panel['type'] === 'x-ui_single') $providerCode = 'sanayi';
+            elseif ($Get_Data_Panel['type'] === 'douman_central') $providerCode = 'sanayi';
+        }
+        if (!empty($providerCode) && class_exists('DoumanCentralClient')) {
+            $centralCfg = DoumanCentralClient::getProviderConfig($providerCode);
+            if ($centralCfg && !empty($centralCfg['api_key'])) {
+                $centralDriver = PanelRegistry::driver('douman_central', $this);
+                if ($centralDriver) {
+                    $resCentral = $centralDriver->create(get_defined_vars());
+                    if (!empty($resCentral['status']) && $resCentral['status'] === 'successful') {
+                        return $this->splitWireguardLinks($Get_Data_Panel, $resCentral);
+                    } elseif (!empty($resCentral['status']) && $resCentral['status'] === 'Unsuccessful') {
+                        return $resCentral;
+                    }
+                }
+            }
+        }
+
         $driver = PanelRegistry::driver($Get_Data_Panel['type'], $this);
         if ($driver !== null && ($result = $driver->create(get_defined_vars())) !== BasePanelDriver::UNSUPPORTED) {
             return $this->splitWireguardLinks($Get_Data_Panel, $result);

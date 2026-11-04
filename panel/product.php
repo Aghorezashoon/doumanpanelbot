@@ -18,17 +18,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add')
   }
   $code = bin2hex(random_bytes(2));
   $limit_ip = isset($_POST['limit_ip']) ? (int) $_POST['limit_ip'] : 1;
+  $provider = in_array($_POST['provider'] ?? '', ['sanayi', 'solidlayer']) ? $_POST['provider'] : 'sanayi';
+  $is_unlimited = !empty($_POST['is_unlimited']) ? 1 : 0;
+  $volume = $is_unlimited ? 0 : (int) ($_POST['volume_product'] ?? 0);
   $extra_user_prices = json_encode([
     '2' => (int) ($_POST['extra_user_2'] ?? 150000),
     '3' => (int) ($_POST['extra_user_3'] ?? 100000),
     '4' => (int) ($_POST['extra_user_4'] ?? 100000),
     '5' => (int) ($_POST['extra_user_5'] ?? 100000),
   ]);
+  $custom_volume_enabled = !empty($_POST['custom_volume_enabled']) ? 1 : 0;
+  $min_volume_gb = (float) ($_POST['min_volume_gb'] ?? 10.0);
+  $max_volume_gb = (float) ($_POST['max_volume_gb'] ?? 200.0);
+  $price_per_gb = (int) ($_POST['price_per_gb'] ?? 5000);
   try {
     db_query(
       $pdo,
-      "INSERT INTO product (name_product,code_product,price_product,Volume_constraint,Service_time,Location,agent,data_limit_reset,note,category,hide_panel,one_buy_status,limit_ip,extra_user_prices) VALUES (?,?,?,?,?,?,?,'no_reset',?,?,'{}','0',?,?)",
-      [$name, $code, (int) ($_POST['price_product'] ?? 0), (int) ($_POST['volume_product'] ?? 0), (int) ($_POST['time_product'] ?? 0), $_POST['namepanel'] ?? '', $_POST['agent_product'] ?? '', $_POST['note_product'] ?? '', $_POST['category_product'] ?? '', $limit_ip, $extra_user_prices]
+      "INSERT INTO product (name_product,code_product,price_product,Volume_constraint,Service_time,Location,agent,data_limit_reset,note,category,hide_panel,one_buy_status,limit_ip,extra_user_prices,provider,is_unlimited,custom_volume_enabled,min_volume_gb,max_volume_gb,price_per_gb) VALUES (?,?,?,?,?,?,?,'no_reset',?,?,'{}','0',?,?,?,?,?,?,?,?)",
+      [$name, $code, (int) ($_POST['price_product'] ?? 0), $volume, (int) ($_POST['time_product'] ?? 0), $_POST['namepanel'] ?? '', $_POST['agent_product'] ?? '', $_POST['note_product'] ?? '', $_POST['category_product'] ?? '', $limit_ip, $extra_user_prices, $provider, $is_unlimited, $custom_volume_enabled, $min_volume_gb, $max_volume_gb, $price_per_gb]
     );
     db_query($pdo, "UPDATE product SET display_order = id WHERE id = ?", [$pdo->lastInsertId()]);
     flash('success', $textbotlang['panel']['productAddedPrefix'] . $name . $textbotlang['panel']['productAddedSuffix']);
@@ -47,16 +54,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit'
     try {
       $pdo->beginTransaction();
       $limit_ip = isset($_POST['limit_ip']) ? (int) $_POST['limit_ip'] : 1;
+      $provider = in_array($_POST['provider'] ?? '', ['sanayi', 'solidlayer']) ? $_POST['provider'] : 'sanayi';
+      $is_unlimited = !empty($_POST['is_unlimited']) ? 1 : 0;
+      $volume = $is_unlimited ? 0 : (int) ($_POST['volume_product'] ?? 0);
       $extra_user_prices = json_encode([
         '2' => (int) ($_POST['extra_user_2'] ?? 150000),
         '3' => (int) ($_POST['extra_user_3'] ?? 100000),
         '4' => (int) ($_POST['extra_user_4'] ?? 100000),
         '5' => (int) ($_POST['extra_user_5'] ?? 100000),
       ]);
+      $custom_volume_enabled = !empty($_POST['custom_volume_enabled']) ? 1 : 0;
+      $min_volume_gb = (float) ($_POST['min_volume_gb'] ?? 10.0);
+      $max_volume_gb = (float) ($_POST['max_volume_gb'] ?? 200.0);
+      $price_per_gb = (int) ($_POST['price_per_gb'] ?? 5000);
       db_query(
         $pdo,
-        "UPDATE product SET name_product=?,price_product=?,Volume_constraint=?,Service_time=?,Location=?,agent=?,note=?,category=?,limit_ip=?,extra_user_prices=? WHERE id=?",
-        [$name, (int) ($_POST['price_product'] ?? 0), (int) ($_POST['volume_product'] ?? 0), (int) ($_POST['time_product'] ?? 0), $_POST['namepanel'] ?? '', $_POST['agent_product'] ?? '', $_POST['note_product'] ?? '', $_POST['category_product'] ?? '', $limit_ip, $extra_user_prices, $pid]
+        "UPDATE product SET name_product=?,price_product=?,Volume_constraint=?,Service_time=?,Location=?,agent=?,note=?,category=?,limit_ip=?,extra_user_prices=?,provider=?,is_unlimited=?,custom_volume_enabled=?,min_volume_gb=?,max_volume_gb=?,price_per_gb=? WHERE id=?",
+        [$name, (int) ($_POST['price_product'] ?? 0), $volume, (int) ($_POST['time_product'] ?? 0), $_POST['namepanel'] ?? '', $_POST['agent_product'] ?? '', $_POST['note_product'] ?? '', $_POST['category_product'] ?? '', $limit_ip, $extra_user_prices, $provider, $is_unlimited, $custom_volume_enabled, $min_volume_gb, $max_volume_gb, $price_per_gb, $pid]
       );
       if (isset($_POST['position'])) {
         move_display_order($pdo, 'product', $pid, (int) $_POST['position']);
@@ -205,6 +219,20 @@ include __DIR__ . '/inc/layout_head.php';
             <input type="text" name="name_product" class="input" placeholder="<?= htmlspecialchars($textbotlang['panel']['productNameExample']) ?>" required>
           </div>
           <div class="field">
+            <label>ارائه‌دهنده سرویس (VPN Provider)</label>
+            <select name="provider" class="select" id="add_provider">
+              <option value="sanayi" selected>سنایی (Sanayi)</option>
+              <option value="solidlayer">سالیدلیر (SolidLayer)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>نوع بسته (حجمی / نامحدود)</label>
+            <select name="is_unlimited" class="select" id="add_is_unlimited" onchange="toggleUnlimitedFields('add')">
+              <option value="0" selected>حجمی (با محدودیت ترافیک GB)</option>
+              <option value="1">نامحدود (سرویس بدون سقف حجم)</option>
+            </select>
+          </div>
+          <div class="field">
             <label><?= $textbotlang['panel']['productSaveBtn'] ?></label>
             <input type="number" name="price_product" class="input" placeholder="<?= htmlspecialchars($textbotlang['panel']['productZeroValue']) ?>" min="0">
           </div>
@@ -283,6 +311,26 @@ include __DIR__ . '/inc/layout_head.php';
               هنگام انتخاب تعداد کاربر توسط مشتری، این مبلغ به ازای هر کاربر اضافه محاسبه و اعمال می‌شود.
             </div>
           </div>
+          <div class="field full" style="background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:6px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;font-size:0.85rem">
+              <input type="checkbox" name="custom_volume_enabled" id="add_custom_volume_enabled" value="1" onchange="window.toggleCustomVolume('add', this.checked)">
+              <span>فعال‌سازی تعیین حجم دلخواه توسط مشتری (Custom Volume)</span>
+            </label>
+            <div id="add_custom_volume_fields" style="display:none;margin-top:10px;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px">
+              <div class="field" style="margin:0">
+                <label style="font-size:0.75rem">حداقل حجم (GB)</label>
+                <input type="number" step="1" name="min_volume_gb" id="add_min_volume_gb" class="input" value="10" min="1">
+              </div>
+              <div class="field" style="margin:0">
+                <label style="font-size:0.75rem">حداکثر حجم (GB)</label>
+                <input type="number" step="1" name="max_volume_gb" id="add_max_volume_gb" class="input" value="200" min="1">
+              </div>
+              <div class="field" style="margin:0">
+                <label style="font-size:0.75rem">قیمت هر GB (تومان)</label>
+                <input type="number" name="price_per_gb" id="add_price_per_gb" class="input" value="5000" min="0" step="500">
+              </div>
+            </div>
+          </div>
           <div class="field full">
             <label><?= $textbotlang['panel']['productColDescription'] ?></label>
             <input type="text" name="note_product" class="input" placeholder="<?= htmlspecialchars($textbotlang['panel']['productDescriptionOptional']) ?>">
@@ -312,6 +360,20 @@ include __DIR__ . '/inc/layout_head.php';
           <div class="field full">
             <label><?= $textbotlang['panel']['productDetailName'] ?></label>
             <input type="text" name="name_product" id="edit_name" class="input" required>
+          </div>
+          <div class="field">
+            <label>ارائه‌دهنده سرویس (VPN Provider)</label>
+            <select name="provider" class="select" id="edit_provider">
+              <option value="sanayi">سنایی (Sanayi)</option>
+              <option value="solidlayer">سالیدلیر (SolidLayer)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>نوع بسته (حجمی / نامحدود)</label>
+            <select name="is_unlimited" class="select" id="edit_is_unlimited" onchange="toggleUnlimitedFields('edit')">
+              <option value="0">حجمی (با محدودیت ترافیک GB)</option>
+              <option value="1">نامحدود (سرویس بدون سقف حجم)</option>
+            </select>
           </div>
           <div class="field">
             <label><?= $textbotlang['panel']['productDetailVolume'] ?></label>
@@ -394,6 +456,26 @@ include __DIR__ . '/inc/layout_head.php';
             </div>
             <div style="font-size:0.72rem;color:var(--mute);margin-top:6px">
               هنگام انتخاب تعداد کاربر توسط مشتری، این مبلغ به ازای هر کاربر اضافه محاسبه و اعمال می‌شود.
+            </div>
+          </div>
+          <div class="field full" style="background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:10px;padding:12px;margin-top:6px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;font-size:0.85rem">
+              <input type="checkbox" name="custom_volume_enabled" id="edit_custom_volume_enabled" value="1" onchange="window.toggleCustomVolume('edit', this.checked)">
+              <span>فعال‌سازی تعیین حجم دلخواه توسط مشتری (Custom Volume)</span>
+            </label>
+            <div id="edit_custom_volume_fields" style="display:none;margin-top:10px;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:10px">
+              <div class="field" style="margin:0">
+                <label style="font-size:0.75rem">حداقل حجم (GB)</label>
+                <input type="number" step="1" name="min_volume_gb" id="edit_min_volume_gb" class="input" value="10" min="1">
+              </div>
+              <div class="field" style="margin:0">
+                <label style="font-size:0.75rem">حداکثر حجم (GB)</label>
+                <input type="number" step="1" name="max_volume_gb" id="edit_max_volume_gb" class="input" value="200" min="1">
+              </div>
+              <div class="field" style="margin:0">
+                <label style="font-size:0.75rem">قیمت هر GB (تومان)</label>
+                <input type="number" name="price_per_gb" id="edit_price_per_gb" class="input" value="5000" min="0" step="500">
+              </div>
             </div>
           </div>
           <div class="field full">

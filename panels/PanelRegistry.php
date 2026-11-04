@@ -3,6 +3,7 @@
 class PanelRegistry
 {
     private static $types = [
+        'douman_central' => 'DoumanCentral',
         'marzban' => 'Marzban',
         'marzneshin' => 'Marzneshin',
         'x-ui_single' => 'XuiSingle',

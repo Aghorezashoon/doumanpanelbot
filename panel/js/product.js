@@ -1,3 +1,10 @@
+
+window.toggleCustomVolume = function (mode, enabled) {
+    var wrap = document.getElementById(mode + '_custom_volume_fields');
+    if (wrap) {
+        wrap.style.display = enabled ? 'grid' : 'none';
+    }
+};
 window.updateAddExtraPricesVisibility = function () {
     var sel = document.getElementById('add_limit_ip');
     var wrap = document.getElementById('add_extra_prices_wrap');
@@ -14,6 +21,22 @@ window.updateEditExtraPricesVisibility = function () {
     }
 };
 
+window.toggleUnlimitedFields = function (mode) {
+    var isUnlSel = document.getElementById(mode + '_is_unlimited');
+    var volInput = (mode === 'add') ? document.querySelector('#addModal input[name="volume_product"]') : document.getElementById('edit_volume');
+    if (isUnlSel && volInput) {
+        if (isUnlSel.value === '1') {
+            volInput.value = '0';
+            volInput.setAttribute('disabled', 'disabled');
+            volInput.parentElement.style.opacity = '0.5';
+        } else {
+            volInput.removeAttribute('disabled');
+            volInput.parentElement.style.opacity = '1';
+            if (volInput.value === '0') volInput.value = '50';
+        }
+    }
+};
+
 window.openEditModal = function (p) {
     document.getElementById('edit_id').value = p.id || '';
     document.getElementById('edit_name').value = p.name_product || '';
@@ -24,6 +47,29 @@ window.openEditModal = function (p) {
     document.getElementById('edit_agent').value = p.agent || '';
     document.getElementById('edit_note').value = p.note || '';
     document.getElementById('edit_position').value = p.position || '';
+
+    var provSel = document.getElementById('edit_provider');
+    if (provSel) {
+        provSel.value = p.provider || 'sanayi';
+    }
+
+    var unlSel = document.getElementById('edit_is_unlimited');
+    if (unlSel) {
+        unlSel.value = (p.is_unlimited == 1) ? '1' : '0';
+        window.toggleUnlimitedFields('edit');
+    }
+
+        var cvCb = document.getElementById('edit_custom_volume_enabled');
+    if (cvCb) {
+        cvCb.checked = (p.custom_volume_enabled == 1);
+        window.toggleCustomVolume('edit', cvCb.checked);
+    }
+    var minV = document.getElementById('edit_min_volume_gb');
+    var maxV = document.getElementById('edit_max_volume_gb');
+    var pGb = document.getElementById('edit_price_per_gb');
+    if (minV) minV.value = p.min_volume_gb || 10;
+    if (maxV) maxV.value = p.max_volume_gb || 200;
+    if (pGb) pGb.value = p.price_per_gb || 5000;
 
     var lipSel = document.getElementById('edit_limit_ip');
     if (lipSel) {

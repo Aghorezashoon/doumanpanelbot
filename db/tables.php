@@ -30,4 +30,5 @@ return [
     'logs_api',
     'category',
     'reagent_report',
+    'reseller_provider',
 ];

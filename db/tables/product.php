@@ -20,7 +20,13 @@ return [
         status_product varchar(20) NOT NULL DEFAULT 'active',
         display_order INT NOT NULL DEFAULT 0,
         limit_ip INT(11) NOT NULL DEFAULT 1,
-        extra_user_prices TEXT NULL
+        extra_user_prices TEXT NULL,
+        provider varchar(50) NOT NULL DEFAULT 'sanayi',
+        is_unlimited TINYINT(1) NOT NULL DEFAULT 0,
+        custom_volume_enabled TINYINT(1) NOT NULL DEFAULT 0,
+        min_volume_gb INT NOT NULL DEFAULT 1,
+        max_volume_gb INT NOT NULL DEFAULT 100,
+        price_per_gb BIGINT NOT NULL DEFAULT 0
         SQL,
     'columns' => [
         ['code_product', null, 'varchar(50)'],
@@ -37,5 +43,11 @@ return [
         ['display_order', null, 'INT NOT NULL DEFAULT 0'],
         ['limit_ip', '1', 'INT(11) NOT NULL DEFAULT 1'],
         ['extra_user_prices', '{}', 'TEXT NULL'],
+        ['provider', 'sanayi', "VARCHAR(50) NOT NULL DEFAULT 'sanayi'"],
+        ['is_unlimited', '0', "TINYINT(1) NOT NULL DEFAULT 0"],
+        ['custom_volume_enabled', '0', "TINYINT(1) NOT NULL DEFAULT 0"],
+        ['min_volume_gb', '1', "INT NOT NULL DEFAULT 1"],
+        ['max_volume_gb', '100', "INT NOT NULL DEFAULT 100"],
+        ['price_per_gb', '0', "BIGINT NOT NULL DEFAULT 0"],
     ],
 ];
