@@ -49,9 +49,11 @@ if (!function_exists('get_solidlayer_auth')) {
             CURLOPT_TIMEOUT_MS => ($GLOBALS['request_exec_timeout'] ?? null) ?: 8000,
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             CURLOPT_HTTPHEADER => [
                 'Content-Type: application/json',
-                'Accept: application/json'
+                'Accept: application/json',
+                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             ]
         ]);
         $response = curl_exec($ch);
@@ -88,7 +90,8 @@ if (!function_exists('solidlayer_request')) {
 
         $headers = [
             $auth['header'],
-            'Accept: application/json'
+            'Accept: application/json',
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         ];
 
         $ch = curl_init($url);
@@ -97,6 +100,7 @@ if (!function_exists('solidlayer_request')) {
             CURLOPT_TIMEOUT_MS => ($GLOBALS['request_exec_timeout'] ?? null) ?: 10000,
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         ];
 
         if (strtoupper($method) === 'POST') {
@@ -180,6 +184,14 @@ if (!function_exists('add_user_solidlayer')) {
 
         $limitUsage = ($data_limit > 0) ? intval($data_limit) : 0;
         $limitExpire = ($expire > 0) ? intval($expire) : 0;
+
+        // SolidLayer does not allow unlimited usage (limit_usage = 0 returns permission error)
+        if ($limitUsage <= 0) {
+            $limitUsage = 20 * 1024 * 1024 * 1024; // Default to 20 GB if volume is not set
+        }
+        if ($limitExpire <= 0) {
+            $limitExpire = time() + (30 * 86400); // Default to 30 days if expire is not set
+        }
 
         $body = [
             [
