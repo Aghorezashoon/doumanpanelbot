@@ -1,5 +1,5 @@
 /**
- * Arka/Voldemort Cloud View Renderers
+ * Mini App View Renderers
  */
 (function() {
     'use strict';
@@ -66,7 +66,7 @@
         const guestBanner = !App.token ? `
             <div class="card" style="background: linear-gradient(135deg, rgba(212, 248, 60, 0.12), rgba(15, 23, 42, 0.9)); border: 1px solid var(--accent-lime-border); padding: 18px 20px; margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;">
                 <div style="flex: 1; min-width: 200px;">
-                    <div style="font-size: 15px; font-weight: 800; color: #fff; margin-bottom: 4px;">🚀 نسخه وب‌اپلیکیشن Vold Cloud</div>
+                    <div style="font-size: 15px; font-weight: 800; color: #fff; margin-bottom: 4px;">🚀 نسخه وب‌اپلیکیشن ${App.systemInfo?.title || ''}</div>
                     <div style="font-size: 12.5px; color: var(--text-secondary); line-height: 1.6;">جهت خرید سرویس، مشاهده اشتراک‌ها و شارژ کیف پول مستقیم از سایت، با حساب تلگرام خود وارد شوید.</div>
                 </div>
                 <button class="btn-lime" onclick="App.navigate('profile')" style="width: auto; padding: 10px 22px; font-size: 13px; white-space: nowrap;">
@@ -1256,7 +1256,7 @@
                     return `
                         <div style="display: flex; flex-direction: column; align-items: ${isAdmin ? 'flex-start' : 'flex-end'}; max-width: 82%; align-self: ${isAdmin ? 'flex-start' : 'flex-end'};">
                             <div style="font-size: 10.5px; color: ${isAdmin ? 'var(--accent-lime)' : 'var(--text-secondary)'}; margin-bottom: 3px; font-weight: 700; padding: 0 4px;">
-                                ${isAdmin ? '🛡️ پشتیبانی Vold Cloud' : '👤 شما'}
+                                ${isAdmin ? '🛡️ پشتیبانی ' + (App.systemInfo?.title || '') : '👤 شما'}
                             </div>
                             <div style="padding: 10px 14px; border-radius: 14px; ${isAdmin ? 'border-bottom-right-radius: 3px;' : 'border-bottom-left-radius: 3px;'} background: ${isAdmin ? '#064e3b' : '#1e293b'}; border: 1px solid ${isAdmin ? '#059669' : '#334155'}; color: #fff; font-size: 13px; line-height: 1.6; word-break: break-word; white-space: pre-wrap;">
                                 ${escapeHtml(m.message)}

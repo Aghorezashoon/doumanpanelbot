@@ -36,7 +36,9 @@ try {
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
         if (!window.Telegram || !window.Telegram.WebApp) {
-            document.write('<script src="./js/telegram-web-app.js"><\/script>');
+            const fallbackScript = document.createElement('script');
+            fallbackScript.src = './js/telegram-web-app.js';
+            document.head.appendChild(fallbackScript);
         }
     </script>
     <script src="./js/qrcode.min.js"></script>
