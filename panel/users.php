@@ -44,11 +44,13 @@ $totalPages = max(1, (int) ceil($total / $perPage));
 $blockedCount = 0;
 $agentCount = 0;
 $agentAdvCount = 0;
+$sellerCount = 0;
 
 try {
     $blockedCount = db_count($pdo, "SELECT COUNT(*) FROM user WHERE User_Status='block'");
     $agentCount = db_count($pdo, "SELECT COUNT(*) FROM user WHERE agent='n'");
     $agentAdvCount = db_count($pdo, "SELECT COUNT(*) FROM user WHERE agent='n2'");
+    $sellerCount = db_count($pdo, "SELECT COUNT(*) FROM user WHERE agent='seller'");
 } catch (Exception $e) {
 }
 
@@ -72,6 +74,9 @@ include __DIR__ . '/inc/layout_head.php';
             <?php if ($agentAdvCount > 0): ?>
                 <a href="?role=n2" class="tag tag-warn" style="cursor:pointer"><?= $agentAdvCount ?> <?= $textbotlang['panel']['usersColUsername'] ?></a>
             <?php endif; ?>
+            <?php if ($sellerCount > 0): ?>
+                <a href="?role=seller" class="tag tag-success" style="cursor:pointer"><?= $sellerCount ?> فروشنده</a>
+            <?php endif; ?>
         </div>
 
         <form method="GET" id="usersForm" class="toolbar-end">
@@ -88,6 +93,7 @@ include __DIR__ . '/inc/layout_head.php';
                 <option value="f" <?= $role === 'f' ? 'selected' : '' ?>><?= $textbotlang['panel']['usersColJoinDate'] ?></option>
                 <option value="n" <?= $role === 'n' ? 'selected' : '' ?>><?= $textbotlang['panel']['usersColPhone'] ?></option>
                 <option value="n2" <?= $role === 'n2' ? 'selected' : '' ?>><?= $textbotlang['panel']['usersColCustomName'] ?></option>
+                <option value="seller" <?= $role === 'seller' ? 'selected' : '' ?>>فروشنده</option>
             </select>
 
             <div class="search-box" style="min-width:260px">

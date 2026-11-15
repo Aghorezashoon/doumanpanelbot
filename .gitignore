@@ -30,4 +30,6 @@ __pycache__/
 
 # Central panel & packages
 central_panel/
+DoumanCentralClient.php
+scratch/
 *.zip

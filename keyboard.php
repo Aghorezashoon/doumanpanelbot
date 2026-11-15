@@ -141,6 +141,9 @@ $keyboardPanel = json_encode([
             ['text' => $textbotlang['textbot']['addBalance'], 'callback_data' => "Add_Balance"]
         ],
         [
+            ['text' => '🌐 نسخه وب / خرید مستقیم از سایت', 'callback_data' => "web_login_direct"],
+        ],
+        [
             ['text' => $textbotlang['language']['changeButton'], 'callback_data' => "ّchange_language"],
         ],
         [['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"]],
@@ -866,11 +869,16 @@ $json_list_remove_helpـlink = json_encode($helpappremove);
 //------------------  [ listpanelusers ]----------------//
 $activePanelRows = array_filter($allPanelRows, function($panel) use ($users) {
     if ($panel['status'] != "active") return false;
-    $pAgent = $panel['agent'] ?? 'all';
     $uAgent = $users['agent'] ?? 'f';
+    if (!empty($panel['allowed_tiers'])) {
+        $userTier = ($uAgent === 'n2') ? 'agent_adv' : (($uAgent === 'seller') ? 'seller' : (($uAgent === 'n') ? 'agent' : 'user'));
+        $allowed = array_map('trim', explode(',', strtolower($panel['allowed_tiers'])));
+        return in_array($userTier, $allowed, true);
+    }
+    $pAgent = $panel['agent'] ?? 'all';
     if ($pAgent === 'all' || empty($pAgent)) return true;
     if ($pAgent === $uAgent) return true;
-    if ($pAgent === 'agents' && in_array($uAgent, ['n', 'n2'])) return true;
+    if ($pAgent === 'agents' && in_array($uAgent, ['n', 'n2', 'seller'])) return true;
     return false;
 });
 $manualsellCounts = [];
@@ -990,7 +998,12 @@ $list_marzban_panel_usertest = ['inline_keyboard' => []];
 foreach ($allPanelRows as $result) {
     $pAgent = $result['agent'] ?? 'all';
     $uAgent = $users['agent'] ?? 'f';
-    $isAllowed = ($pAgent === 'all' || empty($pAgent) || $pAgent === $uAgent || ($pAgent === 'agents' && in_array($uAgent, ['n', 'n2'])));
+    $isAllowed = ($pAgent === 'all' || empty($pAgent) || $pAgent === $uAgent || ($pAgent === 'agents' && in_array($uAgent, ['n', 'n2', 'seller'])));
+    if (!empty($result['allowed_tiers'])) {
+        $userTier = ($uAgent === 'n2') ? 'agent_adv' : (($uAgent === 'seller') ? 'seller' : (($uAgent === 'n') ? 'agent' : 'user'));
+        $allowed = array_map('trim', explode(',', strtolower($result['allowed_tiers'])));
+        $isAllowed = in_array($userTier, $allowed, true);
+    }
     if ($result['TestAccount'] != "ONTestAccount" || !$isAllowed)
         continue;
     if ($result['hide_user'] != null and in_array($from_id, json_decode($result['hide_user'], true)))
@@ -1119,6 +1132,9 @@ if ($setting['statussupportpv'] == "onpvsupport") {
     $supportoption = json_encode([
         'inline_keyboard' => [
             [
+                ['text' => '💬 چت آنلاین پشتیبانی (مینی‌اپ)', 'web_app' => ['url' => "https://{$domainhosts}/app/?tab=support#support"]],
+            ],
+            [
                 ['text' => $textbotlang['textbot']['faq'], 'callback_data' => "fqQuestions"],
                 ['text' => $textbotlang['keyboard']['sendMessageToSupport'], 'url' => "https://t.me/{$setting['id_support']}"],
             ],
@@ -1131,6 +1147,9 @@ if ($setting['statussupportpv'] == "onpvsupport") {
 } else {
     $supportoption = json_encode([
         'inline_keyboard' => [
+            [
+                ['text' => '💬 چت آنلاین پشتیبانی (مینی‌اپ)', 'web_app' => ['url' => "https://{$domainhosts}/app/?tab=support#support"]],
+            ],
             [
                 ['text' => $textbotlang['textbot']['faq'], 'callback_data' => "fqQuestions"],
                 ['text' => $textbotlang['keyboard']['sendMessageToSupport'], 'callback_data' => "support"],
@@ -1371,7 +1390,11 @@ function KeyboardProduct($location, $query, $pricediscount, $datakeyboard, $stat
             $resultper = ($result['price_product'] * $pricediscount) / 100;
             $result['price_product'] = $result['price_product'] - $resultper;
         }
-        $namekeyboard = $result['name_product'] . " - " . number_format($result['price_product']) . $textbotlang['common']['labels']['toman'];
+        if (!empty($result['custom_volume_enabled'])) {
+            $namekeyboard = $result['name_product'] . " (حجم دلخواه - هر گیگ " . number_format($result['price_per_gb'] ?? 0) . " تومان)";
+        } else {
+            $namekeyboard = $result['name_product'] . " - " . number_format($result['price_product']) . $textbotlang['common']['labels']['toman'];
+        }
         if ($statusshowprice == "onshowprice") {
             $result['name_product'] = $namekeyboard;
         }

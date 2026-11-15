@@ -46,16 +46,17 @@ class ServiceMonitor
             $data = $this->processInvoice($invoice);
             if (!is_array($data))
                 continue;
-            $result = false;
-            if (!$check_send['volume']) {
-                if ($this->status_cron['volume'])
-                    $result = $this->checkVolumeThreshold($data['invoice'], $data['user'], $data['userData'], $invoice['username']);
+            if (!is_array($check_send)) {
+                $check_send = ['volume' => false, 'time' => false, 'volume_ended' => false, 'time_ended' => false];
             }
-            if ($result)
-                $data['invoice'] = select("invoice", "*", "id_invoice", $invoice['id_invoice']);
-            if (!$check_send['time']) {
-                if ($this->status_cron['day'])
-                    $this->checkTimeExpiration($data['invoice'], $data['user'], $data['userData'], $invoice['username']);
+            if ($this->status_cron['volume']) {
+                $this->checkVolumeStatus($data['invoice'], $data['user'], $data['userData'], $invoice['username'], $check_send);
+            }
+            $data['invoice'] = select("invoice", "*", "id_invoice", $invoice['id_invoice']);
+            $check_send = json_decode($data['invoice']['notifctions'], true) ?: $check_send;
+
+            if ($this->status_cron['day']) {
+                $this->checkTimeStatus($data['invoice'], $data['user'], $data['userData'], $invoice['username'], $check_send);
             }
             if ($this->status_cron['remove'])
                 $this->shouldRemoveService($data['invoice'], $data['user'], $data['userData'], $invoice['username']);
@@ -104,26 +105,65 @@ class ServiceMonitor
         ];
     }
 
-    private function checkVolumeThreshold($invoice, $user, $userData, $username)
+    private function checkVolumeStatus($invoice, $user, $userData, $username, &$check_send)
     {
-        $remainingVolume = $userData['data_limit'] - $userData['used_traffic'];
-        $volumeWarningThreshold = $this->setting['volumewarn'] * pow(1024, 3);
-        $isVolumeWarning = $remainingVolume <= $volumeWarningThreshold && $remainingVolume > 0 && in_array($userData['status'], ['active', 'Unknown']);
+        $dataLimit = intval($userData['data_limit'] ?? 0);
+        $usedTraffic = intval($userData['used_traffic'] ?? 0);
+        $remainingVolume = $dataLimit - $usedTraffic;
+        $status = $userData['status'] ?? 'active';
 
-        if ($isVolumeWarning) {
-            $formattedVolume = formatBytes($remainingVolume);
-            $message = $this->textBotLang['users']['notify']['greeting'] .
-                sprintf($this->textBotLang['users']['notify']['volumeRemaining'], $username, $formattedVolume) .
-                sprintf($this->textBotLang['users']['notify']['volumeActionHint'], $this->text_Purchased_services);
-            $reportMessage = $this->textBotLang['users']['notify']['volumeTitle'] .
-                sprintf($this->textBotLang['users']['notify']['serviceUsername'], $username) .
-                sprintf($this->textBotLang['users']['notify']['serviceStatus'], $userData['status']) .
-                sprintf($this->textBotLang['users']['notify']['remainingVolume'], $formattedVolume);
-            $this->send_notifactions($invoice, $user, $message, true, $invoice['bottype']);
-            $this->sendReportNotification($reportMessage);
-            $this->updateInvoiceStatus("volume", $invoice);
-            return true;
+        // Check A: Has volume ended? (remaining <= 0 or status is limited)
+        $isVolumeEnded = ($dataLimit > 0 && $remainingVolume <= 0) || $status === 'limited' || $invoice['Status'] === 'end_of_volume';
+
+        if ($isVolumeEnded) {
+            if (empty($check_send['volume_ended'])) {
+                $message = "⚠️ <b>اتمام حجم سرویس</b>\n\n" .
+                    "کاربر گرامی، حجم سرویس <code>{$username}</code> شما به اتمام رسید!\n" .
+                    "جهت برقراری مجدد اتصال، لطفاً نسبت به تمدید سرویس خود اقدام فرمایید.";
+
+                $reportMessage = "⚠️ <b>گزارش اتمام حجم</b>\n" .
+                    "نام کاربری: <code>{$username}</code>\n" .
+                    "شناسه کاربر: <code>{$invoice['id_user']}</code>\n" .
+                    "لوکیشن: {$invoice['Service_location']}\n" .
+                    "وضعیت: اتمام حجم";
+
+                $this->send_notifactions($invoice, $user, $message, true, $invoice['bottype']);
+                $this->sendReportNotification($reportMessage);
+
+                $check_send['volume_ended'] = true;
+                $check_send['volume'] = true;
+                update("invoice", "notifctions", json_encode($check_send), "id_invoice", $invoice['id_invoice']);
+                update("invoice", "Status", "end_of_volume", "id_invoice", $invoice['id_invoice']);
+                return true;
+            }
+            return false;
         }
+
+        // Check B: Volume threshold warning (only if not already warned and remaining > 0)
+        if (empty($check_send['volume'])) {
+            $volumeWarningThreshold = intval($this->setting['volumewarn']) * pow(1024, 3);
+            $isVolumeWarning = $dataLimit > 0 && $remainingVolume <= $volumeWarningThreshold && $remainingVolume > 0 && in_array($status, ['active', 'Unknown', 'disabled']);
+
+            if ($isVolumeWarning) {
+                $formattedVolume = formatBytes($remainingVolume);
+                $message = ($this->textBotLang['users']['notify']['greeting'] ?? "با سلام 👋\n") .
+                    sprintf($this->textBotLang['users']['notify']['volumeRemaining'] ?? "🚨 از حجم سرویس %s تنها %s باقی مانده است.", $username, $formattedVolume) . "\n" .
+                    sprintf($this->textBotLang['users']['notify']['volumeActionHint'] ?? "لطفاً در صورت تمایل برای خرید حجم اضافه یا تمدید اقدام فرمایید.", $this->text_Purchased_services);
+                $reportMessage = ($this->textBotLang['users']['notify']['volumeTitle'] ?? "📌 هشدار حجم:\n") .
+                    sprintf($this->textBotLang['users']['notify']['serviceUsername'] ?? "نام کاربری: %s\n", $username) .
+                    sprintf($this->textBotLang['users']['notify']['serviceStatus'] ?? "وضعیت: %s\n", $status) .
+                    sprintf($this->textBotLang['users']['notify']['remainingVolume'] ?? "حجم باقی‌مانده: %s\n", $formattedVolume);
+
+                $this->send_notifactions($invoice, $user, $message, true, $invoice['bottype']);
+                $this->sendReportNotification($reportMessage);
+
+                $check_send['volume'] = true;
+                update("invoice", "notifctions", json_encode($check_send), "id_invoice", $invoice['id_invoice']);
+                return true;
+            }
+        }
+
+        return false;
     }
     private function shouldRemoveService($invoice, $user, $userData, $username)
     {
@@ -213,31 +253,65 @@ class ServiceMonitor
         if (!empty($modify['status']))
             update("invoice", "uuid", json_encode($userData['uuid']), "id_invoice", $invoice['id_invoice']);
     }
-    private function checkTimeExpiration($invoice, $user, $userData, $username)
+    private function checkTimeStatus($invoice, $user, $userData, $username, &$check_send)
     {
-        $validStatuses = ['expired', 'on_hold', 'limited'];
-        if (in_array($userData['status'], $validStatuses))
-            return;
-        $timeRemaining = $userData['expire'] - time();
-        $daysRemaining = intval($timeRemaining / self::SECONDS_PER_DAY);
-        $warningThreshold = intval($this->setting['daywarn']) * self::SECONDS_PER_DAY;
+        $expire = intval($userData['expire'] ?? 0);
+        $timeRemaining = $expire > 0 ? ($expire - time()) : 999999999;
+        $status = $userData['status'] ?? 'active';
 
-        $isTimeWarning = $timeRemaining <= $warningThreshold && $timeRemaining > 0;
+        // Check A: Has time expired? (timeRemaining <= 0 or status is expired)
+        $isTimeExpired = ($expire > 0 && $timeRemaining <= 0) || $status === 'expired' || $invoice['Status'] === 'end_of_time';
 
-        if ($isTimeWarning) {
-            $message = $this->textBotLang['users']['notify']['greeting2'] .
-                sprintf($this->textBotLang['users']['notify']['timeRemaining'], $username, $daysRemaining) .
-                sprintf($this->textBotLang['users']['notify']['timeActionHint'], $this->text_Purchased_services) .
-                $this->textBotLang['users']['notify']['thanks'];
-            $reportMessage = $this->textBotLang['users']['notify']['timeTitle'] .
-                sprintf($this->textBotLang['users']['notify']['serviceUsername2'], $invoice['username']) .
-                sprintf($this->textBotLang['users']['notify']['serviceStatus2'], $userData['status']) .
-                sprintf($this->textBotLang['users']['notify']['remainingDays'], $daysRemaining);
-            $this->send_notifactions($invoice, $user, $message, true, $invoice['bottype']);
-            $this->sendReportNotification($reportMessage);
-            $this->updateInvoiceStatus("time", $invoice);
-            return true;
+        if ($isTimeExpired) {
+            if (empty($check_send['time_ended'])) {
+                $message = "⚠️ <b>اتمام زمان سرویس (منقضی شده)</b>\n\n" .
+                    "کاربر گرامی، مدت زمان اعتبار سرویس <code>{$username}</code> شما به پایان رسید!\n" .
+                    "جهت برقراری مجدد اتصال، لطفاً نسبت به تمدید سرویس خود اقدام فرمایید.";
+
+                $reportMessage = "⚠️ <b>گزارش انقضای سرویس</b>\n" .
+                    "نام کاربری: <code>{$username}</code>\n" .
+                    "شناسه کاربر: <code>{$invoice['id_user']}</code>\n" .
+                    "لوکیشن: {$invoice['Service_location']}\n" .
+                    "وضعیت: منقضی شده";
+
+                $this->send_notifactions($invoice, $user, $message, true, $invoice['bottype']);
+                $this->sendReportNotification($reportMessage);
+
+                $check_send['time_ended'] = true;
+                $check_send['time'] = true;
+                update("invoice", "notifctions", json_encode($check_send), "id_invoice", $invoice['id_invoice']);
+                update("invoice", "Status", "end_of_time", "id_invoice", $invoice['id_invoice']);
+                return true;
+            }
+            return false;
         }
+
+        // Check B: Time expiration warning (days remaining <= threshold)
+        if (empty($check_send['time'])) {
+            $daysRemaining = intval($timeRemaining / self::SECONDS_PER_DAY);
+            $warningThreshold = intval($this->setting['daywarn']) * self::SECONDS_PER_DAY;
+            $isTimeWarning = $expire > 0 && $timeRemaining <= $warningThreshold && $timeRemaining > 0 && !in_array($status, ['expired', 'on_hold']);
+
+            if ($isTimeWarning) {
+                $message = ($this->textBotLang['users']['notify']['greeting2'] ?? "با سلام 👋\n") .
+                    sprintf($this->textBotLang['users']['notify']['timeRemaining'] ?? "📌 از مهلت زمانی استفاده از سرویس %s فقط %s روز باقی مانده است.", $username, $daysRemaining) . "\n" .
+                    sprintf($this->textBotLang['users']['notify']['timeActionHint'] ?? "لطفاً در صورت تمایل برای تمدید اقدام فرمایید.", $this->text_Purchased_services) . "\n" .
+                    ($this->textBotLang['users']['notify']['thanks'] ?? "با تشکر");
+                $reportMessage = ($this->textBotLang['users']['notify']['timeTitle'] ?? "📌 هشدار زمان:\n") .
+                    sprintf($this->textBotLang['users']['notify']['serviceUsername2'] ?? "نام کاربری: %s\n", $username) .
+                    sprintf($this->textBotLang['users']['notify']['serviceStatus2'] ?? "وضعیت: %s\n", $status) .
+                    sprintf($this->textBotLang['users']['notify']['remainingDays'] ?? "روزهای باقی‌مانده: %s\n", $daysRemaining);
+
+                $this->send_notifactions($invoice, $user, $message, true, $invoice['bottype']);
+                $this->sendReportNotification($reportMessage);
+
+                $check_send['time'] = true;
+                update("invoice", "notifctions", json_encode($check_send), "id_invoice", $invoice['id_invoice']);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function send_notifactions($invoice, $status_cron_user, $message, $keyboard_active, $bot_token)

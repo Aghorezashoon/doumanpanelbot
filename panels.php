@@ -199,9 +199,12 @@ class ManagePanel
     function extend($Method_extend, $new_limit, $time_day, $username, $code_product, $name_panel)
     {
         $panel = select("marzban_panel", "*", "code_panel", $name_panel, "select");
+        if (!$panel) {
+            $panel = select("marzban_panel", "*", "name_panel", $name_panel, "select");
+        }
         $product = select("product", "*", "code_product", $code_product, "select");
         $invoice = select("invoice", "*", "username", $username, "select");
-        if ($code_product == "custom_volume")
+        if ($code_product == "custom_volume" || $code_product == "customvolume")
             $product = true;
         if ($panel == false || $product == false) {
             return array(

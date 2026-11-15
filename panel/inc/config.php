@@ -81,6 +81,11 @@ function require_auth(): void
     }
 }
 
+function csrf_field(): string
+{
+    return '<input type="hidden" name="_csrf" value="' . htmlspecialchars(csrf_token()) . '">';
+}
+
 function csrf_token(): string
 {
     if (session_status() === PHP_SESSION_NONE)
@@ -169,10 +174,11 @@ function user_role_label(string $agent): string
 {
     global $textbotlang;
     return match ($agent) {
-        'n' => $textbotlang['panel']['configRoleN'],
-        'n2' => $textbotlang['panel']['configRoleN2'],
-        'all' => $textbotlang['panel']['configRoleAll'],
-        default => $textbotlang['panel']['configRoleDefault'],
+        'n' => $textbotlang['panel']['configRoleN'] ?? 'نماینده',
+        'n2' => $textbotlang['panel']['configRoleN2'] ?? 'نماینده پیشرفته',
+        'seller' => 'فروشنده',
+        'all' => $textbotlang['panel']['configRoleAll'] ?? 'دسترسی کامل',
+        default => $textbotlang['panel']['configRoleDefault'] ?? 'کاربر عادی',
     };
 }
 
@@ -182,6 +188,7 @@ function user_role_tag(string $agent): string
         'f' => 'tag-info',
         'n' => 'tag-info',
         'n2' => 'tag-warn',
+        'seller' => 'tag-success',
         'all' => 'tag-ok',
         default => 'tag-plain',
     };

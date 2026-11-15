@@ -441,6 +441,32 @@ if ($user['joinchannel'] != "active") {
         }
     }
 }
+if ($text == "/web" || $text == "web" || $datain == "web_login_direct" || (is_string($text) && strpos($text, "/start weblogin") === 0)) {
+    $now = time();
+    $auth_key = bin2hex(random_bytes(16));
+    $code = strval(random_int(10000, 99999));
+    $stmt = $pdo->prepare("INSERT INTO web_login_codes (user_id, code, auth_key, created_at, is_used) VALUES (?, ?, ?, ?, 0)");
+    $stmt->execute([$from_id, $code, $auth_key, $now]);
+    
+    $loginUrl = "https://{$domainhosts}/app/?auth_key=" . $auth_key;
+    $msg = "🌐 <b>ورود به نسخه وب و خرید آنلاین Vold Cloud</b>\n\n"
+         . "برای ورود مستقیم به پنل وب و خرید کانفیگ از طریق مرورگر، روی دکمه زیر کلیک کنید:\n\n"
+         . "کد تأیید ورود دستی: <code>{$code}</code>\n"
+         . "⏱ این لینک و کد به مدت ۱۰ دقیقه معتبر است.";
+    $web_keyboard = json_encode([
+        'inline_keyboard' => [
+            [['text' => '🚀 ورود مستقیم به نسخه وب (بدون نیاز به رمز)', 'url' => $loginUrl]],
+            [['text' => '🔙 بازگشت به منوی کاربری', 'callback_data' => ($datain == "web_login_direct" ? 'account' : 'backuser')]]
+        ]
+    ]);
+    if ($datain == "web_login_direct") {
+        Editmessagetext($from_id, $message_id, $msg, $web_keyboard);
+    } else {
+        sendmessage($from_id, $msg, $web_keyboard, 'HTML');
+    }
+    return;
+}
+
 if ($text == "/start" || $datain == "start" || $text == "start") {
     sendmessage($from_id, $textbotlang['users']['text_start'], $keyboard, "html");
     update("user", "Processing_value", "0", "id", $from_id);
@@ -928,9 +954,9 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
     #---------------[ used_traffic ]--------------#
     $usedTrafficGb = $DataUserOut['used_traffic'] ? formatBytes($DataUserOut['used_traffic']) : $textbotlang['users']['status']['notConsumed'];
     #--------------[ day ]---------------#
-    $timeDiff = $DataUserOut['expire'] - time();
-    if ($timeDiff < 0) {
-        $day = 0;
+    $timeDiff = ($DataUserOut['expire'] ?? 0) - time();
+    if (empty($DataUserOut['expire']) || $timeDiff < 0) {
+        $day = (isset($DataUserOut['status']) && $DataUserOut['status'] === 'on_hold') ? "شروع نشده (پس از اتصال)" : 0;
     } else {
         $day = "";
         $timemonth = floor($timeDiff / 2592000);
@@ -1457,14 +1483,21 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         Editmessagetext($from_id, $message_id, $textbotlang['users']['status']['disabledconfig'], $bakinfos);
     }
 } elseif (preg_match('/extend_(\w+)/', $datain, $dataget)) {
-    $id_invoice = $dataget[1];
-    $nameloc = select("invoice", "*", "id_invoice", $id_invoice, "select");
+    $target_param = $dataget[1];
+    $nameloc = select("invoice", "*", "id_invoice", $target_param, "select");
+    if (!$nameloc) {
+        $nameloc = select("invoice", "*", "username", $target_param, "select");
+    }
     if ($nameloc == false || !invoiceBelongsToUser($nameloc, $from_id)) {
         sendmessage($from_id, $textbotlang['users']['extend']['error'], null, 'HTML');
         return;
     }
+    $id_invoice = $nameloc['id_invoice'];
     $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
-    if ($marzban_list_get['status_extend'] == "off_extend") {
+    if (!$marzban_list_get) {
+        $marzban_list_get = select("marzban_panel", "*", "code_panel", $nameloc['Service_location'], "select");
+    }
+    if ($marzban_list_get && ($marzban_list_get['status_extend'] ?? '') == "off_extend") {
         sendmessage($from_id, $textbotlang['users']['extend']['notSupportedPanel'], null, 'html');
         return;
     }
@@ -1477,16 +1510,17 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         sendmessage($from_id, $textbotlang['users']['extend']['connectFirst'], null, 'html');
         return;
     }
-    $eextraprice = json_decode($marzban_list_get['pricecustomvolume'], true);
-    $custompricevalue = $eextraprice[$user['agent']];
-    $mainvolume = json_decode($marzban_list_get['mainvolume'], true);
-    $mainvolume = $mainvolume[$user['agent']];
-    $maxvolume = json_decode($marzban_list_get['maxvolume'], true);
-    $maxvolume = $maxvolume[$user['agent']];
-    $stmt = $pdo->prepare("SELECT * FROM product WHERE (Location = :service_location OR Location = '/all') AND agent = :agent AND one_buy_status = '0'");
+    $userAgent = $user['agent'] ?: 'f';
+    $eextraprice = json_decode($marzban_list_get['pricecustomvolume'] ?? '[]', true) ?: [];
+    $custompricevalue = $eextraprice[$userAgent] ?? $eextraprice['f'] ?? reset($eextraprice) ?: 0;
+    $mainvolume_arr = json_decode($marzban_list_get['mainvolume'] ?? '[]', true) ?: [];
+    $mainvolume = $mainvolume_arr[$userAgent] ?? $mainvolume_arr['f'] ?? reset($mainvolume_arr) ?: 1;
+    $maxvolume_arr = json_decode($marzban_list_get['maxvolume'] ?? '[]', true) ?: [];
+    $maxvolume = $maxvolume_arr[$userAgent] ?? $maxvolume_arr['f'] ?? reset($maxvolume_arr) ?: 1000;
+    $stmt = $pdo->prepare("SELECT * FROM product WHERE (Location = :service_location OR Location = '/all') AND (agent = :agent OR agent = 'f') AND one_buy_status = '0'");
     $stmt->execute([
         ':service_location' => $marzban_list_get['name_panel'],
-        ':agent' => $user['agent'],
+        ':agent' => $userAgent,
     ]);
     $product = $stmt->rowCount();
     savedata("clear", "id_invoice", $nameloc['id_invoice']);
@@ -1632,30 +1666,41 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         $stmt->execute([
             ':username' => $nameloc['username'],
         ]);
+        $codeproduct_row = null;
         if ($stmt->rowCount() == 0) {
-            $codeproduct = select("product", "*", "name_product", $nameloc['name_product']);
+            $codeproduct_row = select("product", "*", "name_product", $nameloc['name_product']);
+            if (!$codeproduct_row) {
+                $stmtAlt = $pdo->prepare("SELECT * FROM product WHERE (Location = :loc OR Location = '/all') AND Volume_constraint = :vol AND Service_time = :stime LIMIT 1");
+                $stmtAlt->execute([
+                    ':loc' => $nameloc['Service_location'],
+                    ':vol' => $nameloc['Volume'],
+                    ':stime' => $nameloc['Service_time']
+                ]);
+                $codeproduct_row = $stmtAlt->fetch(PDO::FETCH_ASSOC);
+            }
         } else {
             $service_other = $stmt->fetch(PDO::FETCH_ASSOC);
-            if ($service_other == false || !(is_string($service_other['value']) && is_array(json_decode($service_other['value'], true)))) {
-                sendmessage($from_id, $textbotlang['users']['extend']['planNotAvailable'], $keyboard, 'HTML');
-                return;
+            if ($service_other && is_string($service_other['value']) && is_array(json_decode($service_other['value'], true))) {
+                $service_other = json_decode($service_other['value'], true);
+                $codeproduct_row = select("product", "*", "code_product", $service_other['code_product'], "select");
             }
-            $service_other = json_decode($service_other['value'], true);
-            $codeproduct = select("product", "code_product", "code_product", $service_other['code_product'], "select");
         }
-        if ($codeproduct == false) {
-            sendmessage($from_id, $textbotlang['users']['extend']['planNotAvailable'], $keyboard, 'HTML');
-            return;
+        if (!$codeproduct_row) {
+            $codeproduct_row = select("product", "*", "name_product", $nameloc['name_product']);
         }
-        $codeproduct = $codeproduct['code_product'];
         $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
+        if (!$marzban_list_get) {
+            $marzban_list_get = select("marzban_panel", "*", "code_panel", $nameloc['Service_location'], "select");
+        }
+        $codeproduct = $codeproduct_row ? $codeproduct_row['code_product'] : 'customvolume';
     } else {
         $codeproduct = $dataget[1];
     }
-    $eextraprice = json_decode($marzban_list_get['pricecustomvolume'], true);
-    $custompricevalue = $eextraprice[$user['agent']];
-    $eextraprice = json_decode($marzban_list_get['pricecustomtime'], true);
-    $customtimevalueprice = $eextraprice[$user['agent']];
+    $userAgent = $user['agent'] ?: 'f';
+    $eextraprice = json_decode($marzban_list_get['pricecustomvolume'] ?? '[]', true) ?: [];
+    $custompricevalue = $eextraprice[$userAgent] ?? $eextraprice['f'] ?? reset($eextraprice) ?: 0;
+    $eextratime = json_decode($marzban_list_get['pricecustomtime'] ?? '[]', true) ?: [];
+    $customtimevalueprice = $eextratime[$userAgent] ?? $eextratime['f'] ?? reset($eextratime) ?: 0;
     if ($user['step'] == "getvolumecustomuserforextend") {
         $product['name_product'] = $nameloc['name_product'];
         $product['code_product'] = "customvolume";
@@ -1665,13 +1710,21 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         $product['Volume_constraint'] = $userdate['volume'];
         step("home", $from_id);
     } else {
-        $stmt = $pdo->prepare("SELECT * FROM product WHERE (Location = :service_location OR Location = '/all') AND agent = :agent AND code_product = :code_product AND one_buy_status = '0'");
+        $stmt = $pdo->prepare("SELECT * FROM product WHERE (Location = :service_location OR Location = '/all') AND (agent = :agent OR agent = 'f') AND code_product = :code_product AND one_buy_status = '0'");
         $stmt->execute([
             ':service_location' => $nameloc['Service_location'],
-            ':agent' => $user['agent'],
+            ':agent' => $userAgent,
             ':code_product' => $codeproduct,
         ]);
         $product = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$product) {
+            $stmtFallback = $pdo->prepare("SELECT * FROM product WHERE code_product = :code_product LIMIT 1");
+            $stmtFallback->execute([':code_product' => $codeproduct]);
+            $product = $stmtFallback->fetch(PDO::FETCH_ASSOC);
+        }
+        if (!$product && $codeproduct_row) {
+            $product = $codeproduct_row;
+        }
     }
     if ($product == false) {
         sendmessage($from_id, $textbotlang['users']['extend']['restartError'], $keyboard, 'HTML');
@@ -1854,7 +1907,7 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         sendmessage($from_id, sprintf($textbotlang['users']['Discount']['discountapplied'], $user['pricediscount']), null, 'HTML');
     }
     $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
-    if ($user['Balance'] < $pricelastextend && $user['agent'] != "n2" && intval($pricelastextend) != 0) {
+    if ($user['Balance'] < $pricelastextend && intval($pricelastextend) != 0) {
         $marzbandirectpay = select('shopSetting', "*", "Namevalue", "statusdirectpabuy", "select")['value'];
         if ($marzbandirectpay == "offdirectbuy") {
             $minbalance = json_decode(select("PaySetting", "*", "NamePay", "minbalance", "select")['ValuePay'], true)[$user['agent']];
@@ -2139,7 +2192,7 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         sendmessage($from_id, $textbotlang['users']['sell']['purchaseError'], null, 'HTML');
         return;
     }
-    if ($user['Balance'] < $volume && $user['agent'] != "n2") {
+    if ($user['Balance'] < $volume) {
         $marzbandirectpay = select('shopSetting', "*", "Namevalue", "statusdirectpabuy", "select")['value'];
         if ($marzbandirectpay == "offdirectbuy") {
             $minbalance = number_format(json_decode(select("PaySetting", "*", "NamePay", "minbalance", "select")['ValuePay'], true)[$user['agent']]);
@@ -2352,7 +2405,7 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
     if ($limitfree == false) {
         $Pricechange = 0;
     }
-    if ($user['Balance'] < $Pricechange && $user['agent'] != "n2" && $limitfree) {
+    if ($user['Balance'] < $Pricechange && $limitfree) {
         $marzbandirectpay = select('shopSetting', "*", "Namevalue", "statusdirectpabuy", "select")['value'];
         if ($marzbandirectpay == "offdirectbuy") {
             $minbalance = number_format(json_decode(select("PaySetting", "*", "NamePay", "minbalance", "select")['ValuePay'], true)[$user['agent']]);
@@ -2693,7 +2746,7 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         sendmessage($from_id, $textbotlang['users']['sell']['purchaseError'], null, 'HTML');
         return;
     }
-    if ($user['Balance'] < $tmieextra && $user['agent'] != "n2") {
+    if ($user['Balance'] < $tmieextra) {
         $marzbandirectpay = select('shopSetting', "*", "Namevalue", "statusdirectpabuy", "select")['value'];
         if ($marzbandirectpay == "offdirectbuy") {
             $minbalance = number_format(json_decode(select("PaySetting", "*", "NamePay", "minbalance", "select")['ValuePay'], true)[$user['agent']]);
@@ -3025,9 +3078,38 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         return;
     }
     $userlimit = select("user", "*", "id", $from_id, "select");
-    if ($userlimit['limit_usertest'] <= 0 && !in_array($from_id, $admin_ids)) {
-        sendmessage($from_id, $textbotlang['users']['usertest']['limitwarning'], $keyboard_buy, 'html');
-        return;
+    $is_admin = in_array($from_id, $admin_ids);
+    $is_adv_agent = (($userlimit['agent'] ?? '') === 'n2');
+
+    if (!$is_admin) {
+        if ($is_adv_agent) {
+            $adv_mode = select("PaySetting", "ValuePay", "NamePay", "agent_adv_test_mode", "select")['ValuePay'] ?? 'unlimited';
+            $adv_count = (int) (select("PaySetting", "ValuePay", "NamePay", "agent_adv_test_count", "select")['ValuePay'] ?? 100);
+
+            if ($adv_mode === 'daily') {
+                $today_midnight = strtotime('today midnight');
+                $stmt_chk = $pdo->prepare("SELECT COUNT(*) FROM invoice WHERE id_user = ? AND price_product = '0' AND time_sell >= ? AND Status != 'Unsuccessful'");
+                $stmt_chk->execute([$from_id, $today_midnight]);
+                $today_used = (int) $stmt_chk->fetchColumn();
+                if ($today_used >= $adv_count) {
+                    sendmessage($from_id, "⚠️ شما به سقف مجاز ساخت اکانت تست روزانه خود ({$adv_count} عدد در روز) رسیده‌اید.", $keyboard_buy, 'html');
+                    return;
+                }
+            } elseif ($adv_mode === 'total') {
+                $stmt_chk = $pdo->prepare("SELECT COUNT(*) FROM invoice WHERE id_user = ? AND price_product = '0' AND Status != 'Unsuccessful'");
+                $stmt_chk->execute([$from_id]);
+                $total_used = (int) $stmt_chk->fetchColumn();
+                if ($total_used >= $adv_count) {
+                    sendmessage($from_id, "⚠️ شما به سقف مجاز ساخت اکانت تست ({$adv_count} عدد) رسیده‌اید.", $keyboard_buy, 'html');
+                    return;
+                }
+            }
+        } else {
+            if ($userlimit['limit_usertest'] <= 0) {
+                sendmessage($from_id, $textbotlang['users']['usertest']['limitwarning'], $keyboard_buy, 'html');
+                return;
+            }
+        }
     }
     if ($setting['get_number'] == "onAuthenticationphone" && $user['step'] != "get_number" && $user['number'] == "none") {
         sendmessage($from_id, $textbotlang['users']['number']['confirming'], $request_contact, 'HTML');
@@ -3092,8 +3174,10 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
             return;
         }
     }
-    $limit_usertest = $userlimit['limit_usertest'] - 1;
-    update("user", "limit_usertest", $limit_usertest, "id", $from_id);
+    if (!$is_admin && !$is_adv_agent) {
+        $limit_usertest = $userlimit['limit_usertest'] - 1;
+        update("user", "limit_usertest", $limit_usertest, "id", $from_id);
+    }
     $randomString = bin2hex(random_bytes(4));
     $text = strtolower($text);
     $marzban_list_get = select("marzban_panel", "*", "code_panel", $name_panel, "select");
@@ -3138,7 +3222,9 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         }
         step('home', $from_id);
         update("invoice", "Status", "Unsuccessful", "id_invoice", $randomString);
-        update("user", "limit_usertest", $userlimit['limit_usertest'], "id", $from_id);
+        if (!$is_admin && !$is_adv_agent) {
+            update("user", "limit_usertest", $userlimit['limit_usertest'], "id", $from_id);
+        }
         return;
     }
     $output_config_link = "";
@@ -3516,9 +3602,14 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         return;
     }
     $isAgentGroup = in_array($user['agent'], ['n', 'n2']) ? 'agents' : '___none___';
-    $locationproduct = $pdo->prepare("SELECT * FROM marzban_panel  WHERE status = 'active' AND (agent = ? OR agent = 'all' OR agent = ?) ORDER BY display_order, id");
-    $locationproduct->bindValue(1, $user['agent'], PDO::PARAM_STR);
-    $locationproduct->bindValue(2, $isAgentGroup, PDO::PARAM_STR);
+    $uAgentTier = ($user['agent'] === 'n2') ? 'agent_adv' : (($user['agent'] === 'seller') ? 'seller' : (($user['agent'] === 'n') ? 'agent' : 'user'));
+    $locationproduct = $pdo->prepare("SELECT * FROM marzban_panel WHERE status = 'active' AND (
+        (allowed_tiers IS NOT NULL AND allowed_tiers != '' AND FIND_IN_SET(?, allowed_tiers))
+        OR ((allowed_tiers IS NULL OR allowed_tiers = '') AND (agent = ? OR agent = 'all' OR agent = ?))
+    ) ORDER BY display_order, id");
+    $locationproduct->bindValue(1, $uAgentTier, PDO::PARAM_STR);
+    $locationproduct->bindValue(2, $user['agent'], PDO::PARAM_STR);
+    $locationproduct->bindValue(3, $isAgentGroup, PDO::PARAM_STR);
     $locationproduct->execute();
     if (($locationproduct)->rowCount() == 0) {
         sendmessage($from_id, $textbotlang['users']['sell']['nullPanel'], null, 'HTML');
@@ -3755,8 +3846,12 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         savedata("save", "monthproduct", $monthenumber);
         $marzban_list_get = select("marzban_panel", "*", "name_panel", $userdate['name_panel'], "select");
         $isAgentGroup = in_array($user['agent'], ['n', 'n2']) ? 'agents' : '___none___';
-        $stmt = $pdo->prepare("SELECT * FROM marzban_panel  WHERE status = 'active' AND (agent = :mp3 OR agent = 'all' OR agent = :ag_group) ORDER BY display_order, id");
-        $stmt->execute([':mp3' => $user['agent'], ':ag_group' => $isAgentGroup]);
+        $uAgentTier = ($user['agent'] === 'n2') ? 'agent_adv' : (($user['agent'] === 'seller') ? 'seller' : (($user['agent'] === 'n') ? 'agent' : 'user'));
+        $stmt = $pdo->prepare("SELECT * FROM marzban_panel WHERE status = 'active' AND (
+            (allowed_tiers IS NOT NULL AND allowed_tiers != '' AND FIND_IN_SET(:tier, allowed_tiers))
+            OR ((allowed_tiers IS NULL OR allowed_tiers = '') AND (agent = :mp3 OR agent = 'all' OR agent = :ag_group))
+        ) ORDER BY display_order, id");
+        $stmt->execute([':tier' => $uAgentTier, ':mp3' => $user['agent'], ':ag_group' => $isAgentGroup]);
         $count_panel = $stmt->rowCount();
         if ($count_panel == 1) {
             $back = "buybacktow";
@@ -3858,6 +3953,80 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         deletemessage($from_id, $message_id);
     }
     sendmessage($from_id, $textbotlang['users']['selectusername'], $backuser, 'html');
+} elseif (preg_match('/^prodcutservices?_([^-]+)/', $datain, $dataget_custom) && ($chk_userdate = json_decode($user['Processing_value'], true)) && empty($chk_userdate['custom_selected_volume']) && (($chk_prod = select("product", "*", "code_product", $dataget_custom[1], "select")) && !empty($chk_prod['custom_volume_enabled']))) {
+    $code_clicked = $dataget_custom[1];
+    $min_v = intval($chk_prod['min_volume_gb'] ?: 10);
+    $max_v = intval($chk_prod['max_volume_gb'] ?: 200);
+    $p_gb = intval($chk_prod['price_per_gb'] ?: 5000);
+    $s_time = intval($chk_prod['Service_time'] ?: 30);
+    if (!is_array($chk_userdate)) { $chk_userdate = []; }
+    $chk_userdate['custom_prod_code'] = $code_clicked;
+    update("user", "Processing_value", json_encode($chk_userdate), "id", $from_id);
+    update("user", "Processing_value_one", $code_clicked, "id", $from_id);
+    step("get_custom_prod_volume", $from_id);
+    deletemessage($from_id, $message_id);
+    $prompt = "📊 <b>تعیین حجم دلخواه برای سرویس:</b>\n\n"
+        . "▫️ نام محصول: <b>" . htmlspecialchars($chk_prod['name_product']) . "</b>\n"
+        . "▫️ مدت زمان اعتبار: <b>" . $s_time . " روز</b>\n"
+        . "▫️ قیمت هر گیگابایت: <b>" . number_format($p_gb) . " تومان</b>\n"
+        . "▫️ محدوده حجم مجاز: <b>از " . $min_v . " تا " . $max_v . " گیگابایت</b>\n\n"
+        . "✍️ لطفاً <b>حجم مورد نظر خود را به گیگابایت</b> (فقط عدد انگلیسی) ارسال کنید:";
+    sendmessage($from_id, $prompt, $backuser, 'HTML');
+    return;
+} elseif ($user['step'] == "get_custom_prod_volume") {
+    $input_vol = trim($text);
+    $input_vol = strtr($input_vol, [
+        '۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9',
+        '٠'=>'0','١'=>'1','٢'=>'2','٣'=>'3','٤'=>'4','٥'=>'5','٦'=>'6','٧'=>'7','٨'=>'8','٩'=>'9'
+    ]);
+    if (!ctype_digit($input_vol) || intval($input_vol) <= 0) {
+        sendmessage($from_id, "⚠️ لطفاً حجم را فقط به صورت عدد صحیح انگلیسی ارسال کنید.", $backuser, 'HTML');
+        return;
+    }
+    $vol_int = intval($input_vol);
+    $userdate = json_decode($user['Processing_value'], true);
+    if (!is_array($userdate)) { $userdate = []; }
+    $prod_code = $userdate['custom_prod_code'] ?? $user['Processing_value_one'];
+    $stmt = $pdo->prepare("SELECT * FROM product WHERE code_product = :cp LIMIT 1");
+    $stmt->execute([':cp' => $prod_code]);
+    $prod_info = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$prod_info) {
+        sendmessage($from_id, $textbotlang['users']['sell']['productNotFound'], null, 'HTML');
+        step('home', $from_id);
+        return;
+    }
+    $min_v = intval($prod_info['min_volume_gb'] ?: 10);
+    $max_v = intval($prod_info['max_volume_gb'] ?: 200);
+    if ($vol_int < $min_v || $vol_int > $max_v) {
+        sendmessage($from_id, "⚠️ حجم انتخابی باید بین <b>{$min_v}</b> تا <b>{$max_v}</b> گیگابایت باشد.\n\nلطفاً مجدداً حجم را ارسال کنید:", $backuser, 'HTML');
+        return;
+    }
+    $userdate['custom_selected_volume'] = $vol_int;
+    update("user", "Processing_value", json_encode($userdate), "id", $from_id);
+    update("user", "Processing_value_one", $prod_code, "id", $from_id);
+
+    $marzban_list_get = select("marzban_panel", "*", "name_panel", $userdate['name_panel'] ?? '', "select");
+    if (empty($userdate['custom_username']) && empty($userdate['skip_username'])) {
+        $kb_ask_name = json_encode([
+            'inline_keyboard' => [
+                [['text' => "🎲 ساخت نام کاربری خودکار", 'callback_data' => "skip_username_" . $prod_code]],
+                [['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"]]
+            ]
+        ]);
+        $prompt_name = "✍️ <b>انتخاب نام کاربری سرویس (دلخواه):</b>\n\n"
+            . "لطفاً نام کاربری دلخواه خود را به انگلیسی ارسال کنید (مثال: <code>vip_account</code>).\n\n"
+            . "▫️ حداقل ۳ و حداکثر ۳۲ کاراکتر (حروف انگلیسی، اعداد و _)\n"
+            . "▫️ یا در صورتی که تمایل دارید نام به صورت خودکار تعیین شود، روی دکمه زیر کلیک نمایید:";
+        sendmessage($from_id, $prompt_name, $kb_ask_name, 'HTML');
+        update("user", "Processing_value_one", $prod_code, "id", $from_id);
+        step('endstepuser', $from_id);
+        return;
+    }
+
+    $datain = "prodcutservice_" . $prod_code;
+    $dataget = [null, $prod_code];
+    $prodcut = $prod_code;
+    goto process_preinvoice_label;
 } elseif (preg_match('/^changeuserlimit_(.*)/', $datain, $dataget) || (preg_match('/^prodcutservice_(.*)/', $datain, $dataget) && ($chk_userdate = json_decode($user['Processing_value'], true)) && ($chk_panel = select("marzban_panel", "*", "name_panel", $chk_userdate['name_panel'] ?? '', "select")) && ($chk_panel['type'] ?? '') == "x-ui_single" && !isset($chk_userdate['user_limit_selected']) && (($chk_prod = select("product", "*", "code_product", $dataget[1], "select")) && intval($chk_prod['limit_ip'] ?? 1) !== 0))) {
     $prodcut = $dataget[1];
     $userdate = json_decode($user['Processing_value'], true);
@@ -3909,16 +4078,85 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
     update("user", "Processing_value", json_encode($userdate), "id", $from_id);
     update("user", "Processing_value_one", $prodcut, "id", $from_id);
     $marzban_list_get = select("marzban_panel", "*", "name_panel", $userdate['name_panel'] ?? '', "select");
-    if (in_array(usernameMethodKey($marzban_list_get['MethodUsername'] ?? ''), ['customUsername', 'customUsernameRandom'], true)) {
-        Editmessagetext($from_id, $message_id, $textbotlang['users']['selectusername'], $backuser, 'html');
+    if (empty($userdate['custom_username']) && empty($userdate['skip_username'])) {
+        $kb_ask_name = json_encode([
+            'inline_keyboard' => [
+                [['text' => "🎲 ساخت نام کاربری خودکار", 'callback_data' => "skip_username_" . $prodcut]],
+                [['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"]]
+            ]
+        ]);
+        $prompt_name = "✍️ <b>انتخاب نام کاربری سرویس (دلخواه):</b>\n\n"
+            . "لطفاً نام کاربری دلخواه خود را به انگلیسی ارسال کنید (مثال: <code>vip_account</code>).\n\n"
+            . "▫️ حداقل ۳ و حداکثر ۳۲ کاراکتر (حروف انگلیسی، اعداد و _)\n"
+            . "▫️ یا در صورتی که تمایل دارید نام به صورت خودکار تعیین شود، روی دکمه زیر کلیک نمایید:";
+        Editmessagetext($from_id, $message_id, $prompt_name, $kb_ask_name, 'HTML');
+        update("user", "Processing_value_one", $prodcut, "id", $from_id);
         step('endstepuser', $from_id);
         return;
     }
-    // Forward directly to pre-invoice generation with selected product
     $datain = "prodcutservice_" . $prodcut;
     $dataget = [null, $prodcut];
     goto process_preinvoice_label;
-} elseif ($user['step'] == "endstepuser" || $user['step'] == "endstepusers" || preg_match('/prodcutservice_(.*)/', $datain, $dataget) || $user['step'] == "getvolumecustomuser") {
+} elseif (preg_match('/^skip_username_(.*)/', $datain, $match_skip)) {
+    $prodcut = $match_skip[1];
+    $userdate = json_decode($user['Processing_value'], true);
+    if (!is_array($userdate)) { $userdate = []; }
+    $userdate['skip_username'] = true;
+    unset($userdate['custom_username']);
+    update("user", "Processing_value", json_encode($userdate), "id", $from_id);
+    update("user", "Processing_value_one", $prodcut, "id", $from_id);
+    $datain = "prodcutservice_" . $prodcut;
+    $dataget = [null, $prodcut];
+    goto process_preinvoice_label;
+} elseif ($user['step'] == "endstepuser") {
+    $clean_uname = trim(strtolower($text));
+    if (!preg_match("/^[a-zA-Z0-9][a-zA-Z0-9_-]{1,31}$/", $clean_uname)) {
+        sendmessage($from_id, "⚠️ نام کاربری ارسالی نامعتبر است.\n\n• باید با حرف انگلیسی شروع شود\n• فقط شامل حروف انگلیسی، اعداد و _ باشد\n• طول آن بین ۳ تا ۳۲ کاراکتر باشد\n\nلطفاً مجدداً ارسال کنید:", $backuser, 'HTML');
+        return;
+    }
+    $userdate = json_decode($user['Processing_value'], true);
+    if (!is_array($userdate)) { $userdate = []; }
+    $chk_panel = select("marzban_panel", "*", "name_panel", $userdate['name_panel'] ?? '', "select");
+    $chk_data = $ManagePanel->DataUser($chk_panel['name_panel'] ?? '', $clean_uname);
+    if (isset($chk_data['username']) || rowExists("invoice", "username", $clean_uname)) {
+        $prod_code = $user['Processing_value_one'];
+        $kb_ask_name = json_encode([
+            'inline_keyboard' => [
+                [['text' => "🎲 ساخت نام کاربری خودکار", 'callback_data' => "skip_username_" . $prod_code]],
+                [['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"]]
+            ]
+        ]);
+        sendmessage($from_id, "⚠️ نام کاربری <code>{$clean_uname}</code> قبلاً توسط کاربر دیگری ثبت شده است.\n\nلطفاً یک نام دیگر انتخاب و ارسال فرمایید یا از دکمه ساخت خودکار استفاده کنید:", $kb_ask_name, 'HTML');
+        return;
+    }
+    $userdate['custom_username'] = $clean_uname;
+    $userdate['nameconfig'] = $clean_uname;
+    update("user", "Processing_value", json_encode($userdate), "id", $from_id);
+    $prodcut = $user['Processing_value_one'];
+    $datain = "prodcutservice_" . $prodcut;
+    $dataget = [null, $prodcut];
+    goto process_preinvoice_label;
+} elseif (preg_match('/^prodcutservice_(.*)/', $datain, $dataget_checkname) && ($userdate_chk = json_decode($user['Processing_value'], true)) && empty($userdate_chk['custom_username']) && empty($userdate_chk['skip_username'])) {
+    $prod_code = $dataget_checkname[1];
+    $kb_ask_name = json_encode([
+        'inline_keyboard' => [
+            [['text' => "🎲 ساخت نام کاربری خودکار", 'callback_data' => "skip_username_" . $prod_code]],
+            [['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"]]
+        ]
+    ]);
+    $prompt_name = "✍️ <b>انتخاب نام کاربری سرویس (دلخواه):</b>\n\n"
+        . "لطفاً نام کاربری دلخواه خود را به انگلیسی ارسال کنید (مثال: <code>vip_account</code>).\n\n"
+        . "▫️ حداقل ۳ و حداکثر ۳۲ کاراکتر (حروف انگلیسی، اعداد و _)\n"
+        . "▫️ یا در صورتی که تمایل دارید نام به صورت خودکار تعیین شود، روی دکمه زیر کلیک نمایید:";
+    if ($message_id) {
+        Editmessagetext($from_id, $message_id, $prompt_name, $kb_ask_name, 'HTML');
+    } else {
+        sendmessage($from_id, $prompt_name, $kb_ask_name, 'HTML');
+    }
+    update("user", "Processing_value_one", $prod_code, "id", $from_id);
+    step('endstepuser', $from_id);
+    return;
+} elseif ($user['step'] == "endstepusers" || preg_match('/prodcutservice_(.*)/', $datain, $dataget) || $user['step'] == "getvolumecustomuser") {
 process_preinvoice_label:
     $userdate = json_decode($user['Processing_value'], true);
     if (!is_array($userdate) || empty($userdate['name_panel'])) {
@@ -3954,7 +4192,8 @@ process_preinvoice_label:
         return;
     }
     if (in_array(usernameMethodKey($marzban_list_get['MethodUsername']), ['customUsername', 'customUsernameRandom'], true)) {
-        if (!preg_match('~(?!_)^[a-z][a-z\d_]{2,32}(?<!_)$~i', $text)) {
+        $check_name = !empty($userdate['custom_username']) ? $userdate['custom_username'] : trim((string)$text);
+        if (empty($userdate['skip_username']) && !empty($check_name) && !preg_match('/^[a-zA-Z0-9][a-zA-Z0-9_-]{1,31}$/', $check_name)) {
             sendmessage($from_id, $textbotlang['users']['invalidusername'], $backuser, 'HTML');
             return;
         }
@@ -3985,6 +4224,12 @@ process_preinvoice_label:
         sendmessage($from_id, $textbotlang['users']['Balance']['confirmError'], $keyboard, 'HTML');
         return;
     }
+    if (!empty($info_product['custom_volume_enabled']) && !empty($userdate['custom_selected_volume'])) {
+        $custom_vol = intval($userdate['custom_selected_volume']);
+        $price_per_gb = intval($info_product['price_per_gb'] ?: 5000);
+        $info_product['Volume_constraint'] = $custom_vol;
+        $info_product['price_product'] = $custom_vol * $price_per_gb;
+    }
     $chosen_limit = intval($userdate['user_limit'] ?? $info_product['limit_ip'] ?? 1);
     if ($chosen_limit <= 0) { $chosen_limit = 1; }
     $info_product['price_product'] = calculateUserLimitPrice($info_product['price_product'], $chosen_limit, $info_product['extra_user_prices'] ?? null);
@@ -3993,8 +4238,8 @@ process_preinvoice_label:
         $info_product['price_product'] = $info_product['price_product'] - $resultper;
     }
     $randomString = bin2hex(random_bytes(2));
-    $text = strtolower($text);
-    $username_ac = generateUsername($from_id, $marzban_list_get['MethodUsername'], $username, $randomString, $text, $marzban_list_get['namecustom'], $user['namecustom']);
+    $uname_chosen = !empty($userdate['custom_username']) ? $userdate['custom_username'] : strtolower((string)$text);
+    $username_ac = generateUsername($from_id, $marzban_list_get['MethodUsername'], $username, $randomString, $uname_chosen, $marzban_list_get['namecustom'], $user['namecustom']);
     $username_ac = strtolower($username_ac);
     cancelPendingGatewayOrders($from_id);
     $DataUserOut = $ManagePanel->DataUser($marzban_list_get['name_panel'], $username_ac);
@@ -4109,6 +4354,12 @@ process_preinvoice_label:
         sendmessage($from_id, $textbotlang['users']['sell']['productNotFound'], null, 'HTML');
         return;
     }
+    if (!empty($info_product['custom_volume_enabled']) && !empty($userdate['custom_selected_volume'])) {
+        $custom_vol = intval($userdate['custom_selected_volume']);
+        $price_per_gb = intval($info_product['price_per_gb'] ?: 5000);
+        $info_product['Volume_constraint'] = $custom_vol;
+        $info_product['price_product'] = $custom_vol * $price_per_gb;
+    }
     if ($datain == "confirmandgetserviceDiscount") {
         $stmt = $pdo->prepare("SELECT * FROM DiscountSell WHERE (code_product = :code_product OR code_product = 'all') AND (code_panel = :code_panel OR code_panel = '/all') AND codeDiscount = :codeDiscount AND (agent = :agent OR agent = 'allusers') AND (type = 'all' OR type = 'buy')");
         $stmt->execute([
@@ -4168,7 +4419,7 @@ process_preinvoice_label:
     $stmt = $pdo->prepare("INSERT IGNORE INTO invoice (id_user, id_invoice, username,time_sell, Service_location, name_product, price_product, Volume, Service_time,Status,note,refral,notifctions,limit_ip) VALUES (?,  ?, ?, ?, ?, ?, ?,?,?,?,?,?,?,?)");
     $Status = "unpaid";
     $stmt->execute([$from_id, $randomString, $username_ac, $date, $marzban_list_get['name_panel'], $info_product['name_product'], $priceproduct, $info_product['Volume_constraint'], $info_product['Service_time'], $Status, $userdate['nameconfig'] ?? null, $user['affiliates'], $notifctions, $chosen_limit]);
-    if ($priceproduct > $user['Balance'] && $user['agent'] != "n2" && intval($priceproduct) != 0) {
+    if ($priceproduct > $user['Balance'] && intval($priceproduct) != 0) {
         $marzbandirectpay = select("shopSetting", "*", "Namevalue", "statusdirectpabuy", "select")['value'];
         $Balance_prim = $priceproduct - $user['Balance'];
         if ($Balance_prim <= 1)
@@ -4727,7 +4978,7 @@ process_preinvoice_label:
         sendmessage($from_id, sprintf($textbotlang['users']['Discount']['discountapplied'], $user['pricediscount']), null, 'HTML');
     }
     $single_price = intval($user['Processing_value_four']) != 0 ? $priceproduct / intval($user['Processing_value_four']) : $priceproduct;
-    if ($priceproduct > $user['Balance'] && $user['agent'] != "n2") {
+    if ($priceproduct > $user['Balance']) {
         $marzbandirectpay = select('shopSetting', "*", "Namevalue", "statusdirectpabuy", "select")['value'];
         if ($marzbandirectpay == "offdirectbuy") {
             $minbalance = number_format(json_decode(select("PaySetting", "*", "NamePay", "minbalance", "select")['ValuePay'], true)[$user['agent']]);
@@ -6223,7 +6474,7 @@ process_preinvoice_label:
     $volume = $extrapricevalue * $userdata['volume'];
     $usernamepanel = $userdata['username'];
     $location = $marzban_list_get['name_panel'];
-    if ($user['Balance'] < $volume && $user['agent'] != "n2") {
+    if ($user['Balance'] < $volume) {
         $marzbandirectpay = select('shopSetting', "*", "Namevalue", "statusdirectpabuy", "select")['value'];
         if ($marzbandirectpay == "offdirectbuy") {
             $minbalance = number_format(json_decode(select("PaySetting", "*", "NamePay", "minbalance", "select")['ValuePay'], true)[$user['agent']]);
@@ -6902,7 +7153,7 @@ process_preinvoice_label:
         sendmessage($from_id, $textbotlang['users']['extend']['renewalerror'], $keyboard, 'HTML');
         return;
     }
-    if ($user['Balance'] < $prodcut['price_product'] && $user['agent'] != "n2") {
+    if ($user['Balance'] < $prodcut['price_product']) {
         $marzbandirectpay = select('shopSetting', "*", "Namevalue", "statusdirectpabuy", "select")['value'];
         if ($marzbandirectpay == "offdirectbuy") {
             $minbalance = number_format(json_decode(select("PaySetting", "*", "NamePay", "minbalance", "select")['ValuePay'], true)[$user['agent']]);

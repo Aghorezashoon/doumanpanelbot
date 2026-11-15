@@ -16,21 +16,140 @@ if (!$user) {
     exit;
 }
 
+if (!function_exists('clean_int_val')) {
+    function clean_int_val($val): int {
+        if (is_numeric($val)) return (int) $val;
+        if (!is_string($val)) return 0;
+        $persian = ['۰','۱','۲','۳','۴','۵','۶','۷','۸','۹'];
+        $arabic  = ['٠','١','٢','٣','٤','٥','٦','٧','٨','٩'];
+        $val = str_replace($persian, range(0, 9), $val);
+        $val = str_replace($arabic, range(0, 9), $val);
+        $val = preg_replace('/[^\d-]/', '', $val);
+        return (int) $val;
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check_post();
     $action = $_POST['action'] ?? '';
 
-    if ($action === 'add_balance') {
-        $amount = (int) ($_POST['amount'] ?? 0);
-        if ($amount >= 1000) {
-            db_query($pdo, "UPDATE user SET Balance = Balance + ? WHERE id = ?", [$amount, $id]);
-            flash('success', number_format($amount) . $textbotlang['panel']['userBalanceAddedSuffix']);
-        } else {
-            flash('error', $textbotlang['panel']['userMinAmountToman']);
+    if ($action === 'delete_invoice') {
+        $invId = trim($_POST['id_invoice'] ?? '');
+        if ($invId !== '') {
+            $inv = db_fetch($pdo, "SELECT * FROM invoice WHERE id_invoice = ? AND id_user = ? LIMIT 1", [$invId, $id]);
+            if ($inv) {
+                $delPanel = !empty($_POST['delete_panel']);
+                if ($delPanel && !empty($inv['username']) && !empty($inv['Service_location'])) {
+                    try {
+                        require_once __DIR__ . '/../panels.php';
+                        $mp = new ManagePanel();
+                        $mp->RemoveUser($inv['Service_location'], $inv['username']);
+                    } catch (Exception $e) {
+                        error_log("Failed to remove user from panel: " . $e->getMessage());
+                    }
+                }
+                db_query($pdo, "DELETE FROM invoice WHERE id_invoice = ? AND id_user = ?", [$invId, $id]);
+                flash('success', 'سرویس مورد نظر با موفقیت از پروفایل کاربر و ربات حذف گردید.');
+            } else {
+                flash('error', 'سرویس یافت نشد.');
+            }
         }
+        header("Location: user.php?id=" . $id);
+        exit;
+    }
+
+    if ($action === 'add_balance') {
+        $amount = clean_int_val($_POST['amount'] ?? 0);
+        if ($amount >= 1) {
+            db_query($pdo, "UPDATE user SET Balance = Balance + ? WHERE id = ?", [$amount, $id]);
+            
+            try {
+                $dateacc = date('Y/m/d H:i:s');
+                $randomString = bin2hex(random_bytes(5));
+                db_query($pdo, "INSERT INTO Payment_report (id_user,id_order,time,price,payment_Status,Payment_Method,id_invoice) VALUES (?,?,?,?,?,?,?)", [
+                    $id, $randomString, $dateacc, $amount, 'paid', 'add balance by admin', null
+                ]);
+            } catch (Exception $e) {}
+
+            try {
+                require_once __DIR__ . '/../../botapi.php';
+                $heibalanceuser = number_format($amount, 0);
+                $newBal = number_format(((int) ($user['Balance'] ?? 0)) + $amount, 0);
+                $textadd = "✅ <b>افزایش موجودی توسط مدیریت</b>\n\n"
+                         . "مبلغ <b>{$heibalanceuser}</b> تومان به موجودی حساب شما افزوده شد.\n"
+                         . "موجودی فعلی شما: <b>{$newBal}</b> تومان";
+                telegram('sendmessage', [
+                    'chat_id' => $id,
+                    'text' => $textadd,
+                    'parse_mode' => 'HTML'
+                ]);
+            } catch (Exception $e) {}
+
+            flash('success', number_format($amount) . ' تومان به موجودی کاربر افزوده شد.');
+        } else {
+            flash('error', 'لطفاً مبلغ معتبری وارد نمایید.');
+        }
+    } elseif ($action === 'deduct_balance') {
+        $amount = clean_int_val($_POST['amount'] ?? 0);
+        $curBal = (int) ($user['Balance'] ?? 0);
+        if ($amount < 1) {
+            flash('error', 'لطفاً مبلغ معتبری برای کسر وارد نمایید.');
+        } else {
+            db_query($pdo, "UPDATE user SET Balance = GREATEST(0, Balance - ?) WHERE id = ?", [$amount, $id]);
+            
+            try {
+                $dateacc = date('Y/m/d H:i:s');
+                $randomString = bin2hex(random_bytes(5));
+                db_query($pdo, "INSERT INTO Payment_report (id_user,id_order,time,price,payment_Status,Payment_Method,id_invoice) VALUES (?,?,?,?,?,?,?)", [
+                    $id, $randomString, $dateacc, $amount, 'paid', 'low balance by admin', null
+                ]);
+            } catch (Exception $e) {}
+
+            try {
+                require_once __DIR__ . '/../../botapi.php';
+                $lowbalanceuser = number_format($amount, 0);
+                $newBal = number_format(max(0, $curBal - $amount), 0);
+                $textkam = "⚠️ <b>کسر موجودی توسط مدیریت</b>\n\n"
+                         . "مبلغ <b>{$lowbalanceuser}</b> تومان از موجودی حساب شما کسر گردید.\n"
+                         . "موجودی فعلی شما: <b>{$newBal}</b> تومان";
+                telegram('sendmessage', [
+                    'chat_id' => $id,
+                    'text' => $textkam,
+                    'parse_mode' => 'HTML'
+                ]);
+            } catch (Exception $e) {}
+
+            flash('success', number_format($amount) . ' تومان از موجودی کاربر کسر گردید.');
+        }
+    } elseif ($action === 'set_balance') {
+        $newBalance = clean_int_val($_POST['new_balance'] ?? 0);
+        if ($newBalance < 0) $newBalance = 0;
+        db_query($pdo, "UPDATE user SET Balance = ? WHERE id = ?", [$newBalance, $id]);
+        
+        try {
+            $dateacc = date('Y/m/d H:i:s');
+            $randomString = bin2hex(random_bytes(5));
+            db_query($pdo, "INSERT INTO Payment_report (id_user,id_order,time,price,payment_Status,Payment_Method,id_invoice) VALUES (?,?,?,?,?,?,?)", [
+                $id, $randomString, $dateacc, $newBalance, 'paid', 'set balance by admin', null
+            ]);
+        } catch (Exception $e) {}
+
+        try {
+            require_once __DIR__ . '/../../botapi.php';
+            $formattedBal = number_format($newBalance, 0);
+            $textSet = "ℹ️ <b>تنظیم موجودی توسط مدیریت</b>\n\n"
+                     . "موجودی حساب کاربری شما روی <b>{$formattedBal}</b> تومان تنظیم گردید.";
+            telegram('sendmessage', [
+                'chat_id' => $id,
+                'text' => $textSet,
+                'parse_mode' => 'HTML'
+            ]);
+        } catch (Exception $e) {}
+
+        flash('success', 'موجودی کاربر با موفقیت روی ' . number_format($newBalance) . ' تومان تنظیم شد.');
     } elseif ($action === 'set_role') {
         $newRole = $_POST['new_role'] ?? 'f';
-        if (in_array($newRole, ['f', 'n', 'n2', 'all'], true)) {
+        if (in_array($newRole, ['f', 'n', 'n2', 'seller', 'all'], true)) {
             db_query($pdo, "UPDATE user SET agent = ? WHERE id = ?", [$newRole, $id]);
             flash('success', $textbotlang['panel']['userGroupChangedPrefix'] . user_role_label($newRole) . $textbotlang['panel']['userGroupChangedSuffix']);
         }
@@ -225,6 +344,12 @@ include __DIR__ . '/inc/layout_head.php';
                 <button class="btn btn-primary btn-sm" style="justify-content:center" onclick="openModal('addModal')">
                     <?= icon('plus', 13) ?> <?= $textbotlang['panel']['userColAmount'] ?>
                 </button>
+                <button class="btn btn-no btn-sm" style="justify-content:center" onclick="openModal('deductModal')">
+                    <?= icon('minus', 13) ?> <?= $textbotlang['panel']['userDeductBalanceBtn'] ?? 'کسر موجودی' ?>
+                </button>
+                <button class="btn btn-secondary btn-sm" style="justify-content:center" onclick="openModal('setBalanceModal')">
+                    <?= icon('edit', 13) ?> تنظیم دقیق موجودی
+                </button>
                 <button class="btn btn-ghost btn-sm" style="justify-content:center" onclick="openModal('roleModal')">
                     <?= icon('users', 13) ?> <?= $textbotlang['panel']['userColMethod'] ?>
                 </button>
@@ -282,6 +407,7 @@ include __DIR__ . '/inc/layout_head.php';
                                 <th><?= $textbotlang['panel']['userRoleNormalUser'] ?></th>
                                 <th><?= $textbotlang['panel']['userRoleAgent'] ?></th>
                                 <th><?= $textbotlang['panel']['userRoleAdvancedAgent'] ?></th>
+                                <th>عملیات</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -318,6 +444,17 @@ include __DIR__ . '/inc/layout_head.php';
                                             <?= safe_date($inv['time_sell'] ?? null, 'Y/m/d') ?>
                                         </td>
                                         <td><span class="tag <?= $tagClass ?>"><?= $label ?></span></td>
+                                        <td>
+                                            <form method="POST" onsubmit="return confirm('آیا از حذف این سرویس از پروفایل این کاربر اطمینان دارید؟');" style="display:inline;">
+                                                <?= csrf_field() ?>
+                                                <input type="hidden" name="action" value="delete_invoice">
+                                                <input type="hidden" name="id_invoice" value="<?= htmlspecialchars($inv['id_invoice'] ?? '') ?>">
+                                                <input type="hidden" name="delete_panel" value="1">
+                                                <button type="submit" class="btn btn-sm" style="background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);padding:2px 7px;font-size:.72rem;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;gap:3px;" title="حذف سرویس">
+                                                    <?= icon('trash', 12) ?> <span>حذف</span>
+                                                </button>
+                                            </form>
+                                        </td>
                                     </tr>
                                 <?php endforeach; endif; ?>
                         </tbody>
@@ -474,6 +611,66 @@ include __DIR__ . '/inc/layout_head.php';
     </div>
 </div>
 
+<div class="modal-veil" id="deductModal">
+    <div class="modal">
+        <div class="modal-head">
+            <h3><?= $textbotlang['panel']['userDeductBalanceTitle'] ?? 'کسر موجودی کاربر' ?></h3>
+            <button class="modal-x" onclick="closeModal('deductModal')"><?= icon('close', 14) ?></button>
+        </div>
+        <form method="POST">
+            <div class="modal-body">
+                <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="action" value="deduct_balance">
+                <div class="field">
+                    <label>مبلغ کسر از موجودی (تومان):</label>
+                    <input type="number" id="deductAmountInput" name="amount" class="input" placeholder="مثال: ۵۰۰۰۰" min="1" required>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;flex-wrap:wrap">
+                        <span class="field-hint">موجودی فعلی: <strong><?= number_format($balance) ?> تومان</strong></span>
+                        <?php if ($balance > 0): ?>
+                            <button type="button" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:.7rem" onclick="document.getElementById('deductAmountInput').value = <?= $balance ?>;">
+                                <?= $textbotlang['panel']['userDeductAllBtn'] ?? 'کسر کل موجودی' ?>
+                            </button>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-foot">
+                <button type="submit" class="btn btn-no" style="justify-content:center"><?= icon('minus', 13) ?> <?= $textbotlang['panel']['userDeductConfirmBtn'] ?? 'کسر از موجودی' ?></button>
+                <button type="button" class="btn btn-ghost" onclick="closeModal('deductModal')"><?= $textbotlang['panel']['userDetailDate'] ?></button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal-veil" id="setBalanceModal">
+    <div class="modal">
+        <div class="modal-head">
+            <h3>تنظیم دستی موجودی کاربر</h3>
+            <button class="modal-x" onclick="closeModal('setBalanceModal')"><?= icon('close', 14) ?></button>
+        </div>
+        <form method="POST">
+            <div class="modal-body">
+                <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+                <input type="hidden" name="action" value="set_balance">
+                <div class="field">
+                    <label>موجودی جدید کاربر (تومان):</label>
+                    <input type="number" id="setBalanceInput" name="new_balance" class="input" value="<?= $balance ?>" min="0" required>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;flex-wrap:wrap">
+                        <span class="field-hint">موجودی فعلی: <strong><?= number_format($balance) ?> تومان</strong></span>
+                        <button type="button" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:.7rem;color:var(--danger)" onclick="document.getElementById('setBalanceInput').value = 0;">
+                            صفر کردن موجودی (۰ تومان)
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-foot">
+                <button type="submit" class="btn btn-primary" style="justify-content:center"><?= icon('check', 13) ?> ذخیره موجودی جدید</button>
+                <button type="button" class="btn btn-ghost" onclick="closeModal('setBalanceModal')"><?= $textbotlang['panel']['userDetailDate'] ?></button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div class="modal-veil" id="roleModal">
     <div class="modal">
         <div class="modal-head">
@@ -490,6 +687,7 @@ include __DIR__ . '/inc/layout_head.php';
                         <option value="f" <?= $agent === 'f' ? 'selected' : '' ?>><?= $textbotlang['panel']['userRoleFreeUser'] ?></option>
                         <option value="n" <?= $agent === 'n' ? 'selected' : '' ?>><?= $textbotlang['panel']['userRoleNormalAgent'] ?></option>
                         <option value="n2" <?= $agent === 'n2' ? 'selected' : '' ?>><?= $textbotlang['panel']['userRoleAdvancedAgent2'] ?></option>
+                        <option value="seller" <?= $agent === 'seller' ? 'selected' : '' ?>>فروشنده (seller)</option>
                     </select>
                     <span class="field-hint">
                         <?= $textbotlang['panel']['userDetailPanel'] ?> <strong><?= user_role_label($agent) ?></strong>

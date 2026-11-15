@@ -5,6 +5,9 @@ require_once __DIR__ . '/../function.php';
 require_once __DIR__ . '/utils.php';
 
 header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0, post-check=0, pre-check=0');
+header('Pragma: no-cache');
+header('Expires: 0');
 date_default_timezone_set('Asia/Tehran');
 ini_set('default_charset', 'UTF-8');
 ini_set('error_log', 'error_log');
@@ -248,6 +251,18 @@ if ($userData === null) {
 
 $userId = $userData['id'];
 $userRecord = select('user', '*', 'id', $userId, 'select');
+
+if (!$userRecord) {
+    try {
+        $stmt_reg = $pdo->prepare("INSERT IGNORE INTO user (id, step, limit_usertest, User_Status, number, Balance, pagenumber, username, agent, message_count, last_message_time, affiliates, affiliatescount, cardpayment, number_username, namecustom, register, verify, codeInvitation, pricediscount, maxbuyagent, joinchannel, score, status_cron) VALUES (?, 'none', 1, 'Active', 'none', '0', '1', ?, 'f', '0', '0', '0', '0', 'none', '100', 'none', ?, 1, ?, '0', '0', '0', '0', '1')");
+        $invCode = bin2hex(random_bytes(6));
+        $uname = $userData['username'] ?? ($userData['first_name'] ?? 'User');
+        $stmt_reg->execute([$userId, $uname, time(), $invCode]);
+        $userRecord = select('user', '*', 'id', $userId, 'select');
+    } catch (Exception $e) {
+        error_log('Auto register user error: ' . $e->getMessage());
+    }
+}
 
 if (!$userRecord) {
     respond_json(404, [

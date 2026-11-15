@@ -1,10 +1,35 @@
+window.toggleProductType = function (mode) {
+    var sel = document.getElementById(mode + '_product_type');
+    if (!sel) return;
+    var val = sel.value;
+    var volWrap = document.getElementById(mode + '_volume_wrap');
+    var priceWrap = document.getElementById(mode + '_price_wrap');
+    var customWrap = document.getElementById(mode + '_custom_volume_wrap');
+    var volInput = (mode === 'add') ? document.querySelector('#addModal input[name="volume_product"]') : document.getElementById('edit_volume');
 
-window.toggleCustomVolume = function (mode, enabled) {
-    var wrap = document.getElementById(mode + '_custom_volume_fields');
-    if (wrap) {
-        wrap.style.display = enabled ? 'grid' : 'none';
+    if (val === 'custom') {
+        if (volWrap) volWrap.style.display = 'none';
+        if (priceWrap) priceWrap.style.display = 'none';
+        if (customWrap) customWrap.style.display = 'block';
+    } else if (val === 'unlimited' || val === '1') {
+        if (volWrap) {
+            volWrap.style.display = 'none';
+            if (volInput) volInput.value = '0';
+        }
+        if (priceWrap) priceWrap.style.display = 'block';
+        if (customWrap) customWrap.style.display = 'none';
+    } else {
+        if (volWrap) {
+            volWrap.style.display = 'block';
+            if (volInput && volInput.value === '0') volInput.value = '50';
+        }
+        if (priceWrap) priceWrap.style.display = 'block';
+        if (customWrap) customWrap.style.display = 'none';
     }
 };
+
+window.toggleUnlimitedFields = window.toggleProductType;
+
 window.updateAddExtraPricesVisibility = function () {
     var sel = document.getElementById('add_limit_ip');
     var wrap = document.getElementById('add_extra_prices_wrap');
@@ -18,22 +43,6 @@ window.updateEditExtraPricesVisibility = function () {
     var wrap = document.getElementById('edit_extra_prices_wrap');
     if (sel && wrap) {
         wrap.style.display = (sel.value === '-1') ? 'block' : 'none';
-    }
-};
-
-window.toggleUnlimitedFields = function (mode) {
-    var isUnlSel = document.getElementById(mode + '_is_unlimited');
-    var volInput = (mode === 'add') ? document.querySelector('#addModal input[name="volume_product"]') : document.getElementById('edit_volume');
-    if (isUnlSel && volInput) {
-        if (isUnlSel.value === '1') {
-            volInput.value = '0';
-            volInput.setAttribute('disabled', 'disabled');
-            volInput.parentElement.style.opacity = '0.5';
-        } else {
-            volInput.removeAttribute('disabled');
-            volInput.parentElement.style.opacity = '1';
-            if (volInput.value === '0') volInput.value = '50';
-        }
     }
 };
 
@@ -53,23 +62,24 @@ window.openEditModal = function (p) {
         provSel.value = p.provider || 'sanayi';
     }
 
-    var unlSel = document.getElementById('edit_is_unlimited');
-    if (unlSel) {
-        unlSel.value = (p.is_unlimited == 1) ? '1' : '0';
-        window.toggleUnlimitedFields('edit');
+    var pTypeSel = document.getElementById('edit_product_type');
+    if (pTypeSel) {
+        if (p.custom_volume_enabled == 1) {
+            pTypeSel.value = 'custom';
+        } else if (p.is_unlimited == 1) {
+            pTypeSel.value = 'unlimited';
+        } else {
+            pTypeSel.value = 'volume';
+        }
+        window.toggleProductType('edit');
     }
 
-        var cvCb = document.getElementById('edit_custom_volume_enabled');
-    if (cvCb) {
-        cvCb.checked = (p.custom_volume_enabled == 1);
-        window.toggleCustomVolume('edit', cvCb.checked);
-    }
     var minV = document.getElementById('edit_min_volume_gb');
     var maxV = document.getElementById('edit_max_volume_gb');
     var pGb = document.getElementById('edit_price_per_gb');
-    if (minV) minV.value = p.min_volume_gb || 10;
-    if (maxV) maxV.value = p.max_volume_gb || 200;
-    if (pGb) pGb.value = p.price_per_gb || 5000;
+    if (minV) minV.value = (p.min_volume_gb !== undefined && p.min_volume_gb !== null) ? p.min_volume_gb : 1;
+    if (maxV) maxV.value = (p.max_volume_gb !== undefined && p.max_volume_gb !== null) ? p.max_volume_gb : 200;
+    if (pGb) pGb.value = (p.price_per_gb !== undefined && p.price_per_gb !== null) ? p.price_per_gb : '';
 
     var lipSel = document.getElementById('edit_limit_ip');
     if (lipSel) {
@@ -112,4 +122,7 @@ window.openEditModal = function (p) {
 document.addEventListener('DOMContentLoaded', function () {
     window.updateAddExtraPricesVisibility();
     window.updateEditExtraPricesVisibility();
+    if (typeof window.toggleProductType === 'function') {
+        window.toggleProductType('add');
+    }
 });

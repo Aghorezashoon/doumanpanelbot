@@ -114,6 +114,24 @@ $initials = mb_strtoupper(mb_substr($currentUser, 0, 1, 'UTF-8'), 'UTF-8');
             <span class="nav-icon"><?= icon('server') ?></span><span
               class="nav-label"><?= $textbotlang['panel']['layoutMenuSectionFinancial'] ?></span>
           </a>
+          <a href="support.php" class="nav-item <?= $activeNav === 'support' ? 'active' : '' ?>"
+            title="چت آنلاین پشتیبانی">
+            <span class="nav-icon"><?= icon('message') ?></span><span
+              class="nav-label">چت آنلاین پشتیبانی</span>
+            <?php
+            $unreadSupportCount = 0;
+            try {
+                $unreadSupportCount = (int) db_count($pdo, "SELECT COUNT(*) FROM support_messages WHERE sender = 'user' AND is_read = 0");
+            } catch (Exception $e) {}
+            if ($unreadSupportCount > 0): ?>
+              <span class="tag tag-warn" style="margin-right:auto;padding:1px 6px;font-size:0.7rem;border-radius:10px;background:#e11d48;color:#fff;"><?= $unreadSupportCount ?></span>
+            <?php endif; ?>
+          </a>
+          <a href="panels_access.php" class="nav-item <?= $activeNav === 'panels_access' ? 'active' : '' ?>"
+            title="سطح دسترسی پنل‌ها و سرورها">
+            <span class="nav-icon"><?= icon('server') ?></span><span
+              class="nav-label">دسترسی پنل‌ها</span>
+          </a>
           <a href="product.php" class="nav-item <?= $activeNav === 'product' ? 'active' : '' ?>"
             title="<?= $textbotlang['panel']['layoutPageTitleProduct'] ?>">
             <span class="nav-icon"><?= icon('package') ?></span><span

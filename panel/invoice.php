@@ -3,6 +3,35 @@ require_once __DIR__ . '/inc/config.php';
 require_once __DIR__ . '/inc/icons.php';
 require_auth();
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  csrf_check_post();
+  $action = $_POST['action'] ?? '';
+  if ($action === 'delete_invoice') {
+    $invId = trim($_POST['id_invoice'] ?? '');
+    if ($invId !== '') {
+      $inv = db_fetch($pdo, "SELECT * FROM invoice WHERE id_invoice = ? LIMIT 1", [$invId]);
+      if ($inv) {
+        $delPanel = !empty($_POST['delete_panel']);
+        if ($delPanel && !empty($inv['username']) && !empty($inv['Service_location'])) {
+          try {
+            require_once __DIR__ . '/../panels.php';
+            $mp = new ManagePanel();
+            $mp->RemoveUser($inv['Service_location'], $inv['username']);
+          } catch (Exception $e) {
+            error_log("Failed to remove user from panel: " . $e->getMessage());
+          }
+        }
+        db_query($pdo, "DELETE FROM invoice WHERE id_invoice = ?", [$invId]);
+        flash('success', 'سرویس با شناسه ' . htmlspecialchars($invId) . ' با موفقیت از ربات و سیستم حذف گردید.');
+      } else {
+        flash('error', 'سرویس یافت نشد.');
+      }
+    }
+    header("Location: invoice.php" . (!empty($_GET) ? '?' . http_build_query($_GET) : ''));
+    exit;
+  }
+}
+
 $search = trim($_GET['q'] ?? '');
 
 $status = $_GET['status'] ?? '';
@@ -83,7 +112,8 @@ include __DIR__ . '/inc/layout_head.php';
           <th><?= $textbotlang['panel']['invoiceColPrice'] ?></th>
           <th><?= $textbotlang['panel']['invoiceColStatus'] ?></th>
           <th><?= $textbotlang['panel']['invoiceColDate'] ?></th>
-          <th>فاکتور رسمی</th>
+          <th>فاکتور</th>
+          <th>عملیات</th>
         </tr>
       </thead>
       <tbody>
@@ -116,9 +146,20 @@ include __DIR__ . '/inc/layout_head.php';
               <td class="cf"><?= safe_date($inv['time_sell'] ?? null, 'Y/m/d') ?></td>
               <td><span class="tag <?= $cls ?>"><?= $lbl ?></span></td>
               <td>
-                <a href="print_invoice.php?id=<?= urlencode($inv['id_invoice']) ?>" target="_blank" class="btn btn-primary btn-sm" style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;font-size:.76rem;border-radius:7px;text-decoration:none;" title="صدور فاکتور رسمی">
-                  <?= icon('download', 12) ?> <span>فاکتور رسمی</span>
+                <a href="print_invoice.php?id=<?= urlencode($inv['id_invoice']) ?>" target="_blank" class="btn btn-secondary btn-sm" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;font-size:.74rem;border-radius:6px;text-decoration:none;" title="صدور فاکتور رسمی">
+                  <?= icon('download', 12) ?> <span>فاکتور</span>
                 </a>
+              </td>
+              <td>
+                <form method="POST" onsubmit="return confirm('آیا از حذف این سرویس از دیتابیس ربات و حساب کاربر اطمینان دارید؟');" style="display:inline;">
+                  <?= csrf_field() ?>
+                  <input type="hidden" name="action" value="delete_invoice">
+                  <input type="hidden" name="id_invoice" value="<?= htmlspecialchars($inv['id_invoice'] ?? '') ?>">
+                  <input type="hidden" name="delete_panel" value="1">
+                  <button type="submit" class="btn btn-sm" style="background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);padding:3px 8px;font-size:.74rem;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;gap:3px;" title="حذف سرویس">
+                    <?= icon('trash', 12) ?> <span>حذف</span>
+                  </button>
+                </form>
               </td>
             </tr>
           <?php endforeach; endif; ?>

@@ -3443,7 +3443,7 @@ function migrate_to_pro() {
     NEW_BOT_DIR="/var/www/html/doumanpanelbot"
     rm -rf "$OLD_BOT_DIR"
     mkdir -p "$NEW_BOT_DIR"
-    ZIP_URL="https://github.com/mahdiMGF2/doumanpanelbot/archive/refs/heads/main.zip"
+    ZIP_URL="https://github.com/${GIT_REPO}/archive/refs/heads/main.zip"
     TEMP_DIR="/tmp/doumanpanelbot_mig"
     mkdir -p "$TEMP_DIR"
     run_step "Downloading Douman Panel Pro source" "wget -q -O '$TEMP_DIR/bot.zip' '$ZIP_URL'" \

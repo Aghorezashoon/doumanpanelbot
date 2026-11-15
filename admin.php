@@ -935,6 +935,9 @@ elseif ($datain == "systemsms") {
                 ['text' => $textbotlang['keyboard']['usersGroupN2'], 'callback_data' => 'typeagent-n2'],
             ],
             [
+                ['text' => 'فروشنده', 'callback_data' => 'typeagent-seller'],
+            ],
+            [
                 ['text' => $textbotlang['keyboard']['backToPrev'], 'callback_data' => 'typeservice-' . $userdata['typeservice']],
             ],
         ]
@@ -1571,7 +1574,7 @@ elseif ($datain == "systemsms") {
     sendmessage($from_id, $textbotlang['Admin']['agent']['setAgentProduct'], $backadmin, 'HTML');
     step('get_agent', $from_id);
 } elseif ($user['step'] == "get_agent") {
-    $agent = ["n", "f", "n2"];
+    $agent = ["n", "f", "n2", "seller"];
     if (!in_array($text, $agent)) {
         sendmessage($from_id, $textbotlang['common']['invalidInput'], $backadmin, 'HTML');
         return;
@@ -2121,6 +2124,7 @@ elseif ($datain == "systemsms") {
                 ['text' => $textbotlang['keyboard']['usersGroupF'], 'callback_data' => 'typebalanceall_f'],
                 ['text' => $textbotlang['keyboard']['usersGroupN'], 'callback_data' => 'typebalanceall_n'],
                 ['text' => $textbotlang['keyboard']['usersGroupN2'], 'callback_data' => 'typebalanceall_n2'],
+                ['text' => 'فروشنده', 'callback_data' => 'typebalanceall_seller'],
             ],
             [
                 ['text' => $textbotlang['keyboard']['backToMain'], 'callback_data' => 'backuser'],
@@ -2800,6 +2804,7 @@ elseif ($datain == "systemsms") {
         'agents' => '👥 فقط نماینده‌ها (مخفی برای عادی)',
         'n2' => '👑 فقط نماینده ارشد (مخفی برای عادی و نماینده عادی)',
         'f' => '👤 فقط کاربران عادی',
+        'seller' => '💼 فقط فروشنده',
         'n' => '🏢 فقط نماینده عادی',
         default => '🌐 نمایش برای همه (all)'
     };
@@ -2819,11 +2824,12 @@ elseif ($datain == "systemsms") {
             [['text' => "👑 فقط نماینده ارشد (مخفی برای عادی و نماینده)", 'callback_data' => "setpanelagent_n2"]],
             [['text' => "👤 فقط کاربران عادی (f)", 'callback_data' => "setpanelagent_f"]],
             [['text' => "🏢 فقط نماینده عادی (n)", 'callback_data' => "setpanelagent_n"]],
+            [['text' => "💼 فقط فروشنده (seller)", 'callback_data' => "setpanelagent_seller"]],
         ]
     ]);
     sendmessage($from_id, $prompt, $agent_keyboard, 'HTML');
     step('getagentpanel', $from_id);
-} elseif (preg_match('/^setpanelagent_(all|agents|n2|f|n)$/', $datain, $matches) && $adminrulecheck['rule'] == "administrator") {
+} elseif (preg_match('/^setpanelagent_(all|agents|n2|f|n|seller)$/', $datain, $matches) && $adminrulecheck['rule'] == "administrator") {
     $chosen_agent = $matches[1];
     $panel_name = $user['Processing_value'];
     $typepanel = select("marzban_panel", "*", "name_panel", $panel_name, "select");
@@ -2833,6 +2839,7 @@ elseif ($datain == "systemsms") {
         'agents' => '👥 فقط نماینده‌ها (مخفی برای کاربران عادی)',
         'n2' => '👑 فقط نماینده ارشد (مخفی برای عادی و نماینده عادی)',
         'f' => '👤 فقط کاربران عادی',
+        'seller' => '💼 فقط فروشنده',
         'n' => '🏢 فقط نماینده عادی',
         default => '🌐 همه کاربران (عادی و نماینده‌ها)'
     };
@@ -3166,6 +3173,7 @@ elseif ($datain == "systemsms") {
             [
                 ['text' => "n", 'callback_data' => "agenttypshowlist_n"],
                 ['text' => "n2", 'callback_data' => "agenttypshowlist_n2"],
+                ['text' => "فروشنده", 'callback_data' => "agenttypshowlist_seller"],
             ],
             [
                 ['text' => $textbotlang['keyboard']['allAgents'], 'callback_data' => "agenttypshowlist_all"],
@@ -4207,14 +4215,14 @@ elseif ($datain == "systemsms") {
     step('getagentbalancemin', $from_id);
     sendmessage($from_id, $textbotlang['Admin']['Balance']['askMinChargeGroup'], $backadmin, 'HTML');
 } elseif ($user['step'] == "getagentbalancemin") {
-    $agentst = ["n", "n2", "f", "allusers"];
+    $agentst = ["n", "n2", "seller", "f", "allusers"];
     if (!in_array($text, $agentst)) {
         sendmessage($from_id, $textbotlang['Admin']['Discount']['invalidAgentCode'], $backadmin, 'HTML');
         return;
     }
     step('home', $from_id);
     $balancemaax = json_decode(select("PaySetting", "ValuePay", "NamePay", "minbalance", "select")['ValuePay'], true);
-    foreach ($text == "allusers" ? ["f", "n", "n2"] : [$text] as $agentKey) {
+    foreach ($text == "allusers" ? ["f", "n", "n2", "seller"] : [$text] as $agentKey) {
         $balancemaax[$agentKey] = $user['Processing_value'];
     }
     $balancemaax = json_encode($balancemaax);
@@ -4234,14 +4242,14 @@ elseif ($datain == "systemsms") {
     step('getagentbalancemax', $from_id);
     sendmessage($from_id, $textbotlang['Admin']['Balance']['askMinChargeGroup'], $backadmin, 'HTML');
 } elseif ($user['step'] == "getagentbalancemax") {
-    $agentst = ["n", "n2", "f", "allusers"];
+    $agentst = ["n", "n2", "seller", "f", "allusers"];
     if (!in_array($text, $agentst)) {
         sendmessage($from_id, $textbotlang['Admin']['Discount']['invalidAgentCode'], $backadmin, 'HTML');
         return;
     }
     step('home', $from_id);
     $balancemaax = json_decode(select("PaySetting", "ValuePay", "NamePay", "maxbalance", "select")['ValuePay'], true);
-    foreach ($text == "allusers" ? ["f", "n", "n2"] : [$text] as $agentKey) {
+    foreach ($text == "allusers" ? ["f", "n", "n2", "seller"] : [$text] as $agentKey) {
         $balancemaax[$agentKey] = $user['Processing_value'];
     }
     $balancemaax = json_encode($balancemaax);
@@ -4273,7 +4281,7 @@ elseif ($datain == "systemsms") {
     ]);
     step('gettypeagentoflist', $from_id);
 } elseif ($user['step'] == "gettypeagentoflist") {
-    $agentst = ["n", "n2"];
+    $agentst = ["n", "n2", "seller"];
     if (!in_array($text, $agentst)) {
         sendmessage($from_id, $textbotlang['Admin']['agent']['invalidTypeAgent'], $backadmin, 'HTML');
         return;
@@ -5211,6 +5219,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     $agentTypeLabels = [
         'n' => $textbotlang['keyboard']['normalAgent'],
         'n2' => $textbotlang['keyboard']['advancedAgent'],
+        'seller' => 'فروشنده',
     ];
     update("Requestagent", "type", $defaultAgentType, "id", $id_user);
     update("user", "agent", $defaultAgentType, "id", $id_user);
@@ -5249,6 +5258,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     $agentTypeLabels = [
         'n' => $textbotlang['keyboard']['normalAgent'],
         'n2' => $textbotlang['keyboard']['advancedAgent'],
+        'seller' => 'فروشنده',
     ];
     if (!array_key_exists($selectedType, $agentTypeLabels)) {
         telegram('answerCallbackQuery', array(
@@ -6060,7 +6070,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     sendmessage($from_id, $textbotlang['Admin']['price']['selectUserGroup'] . "\n" . $textbotlang['Admin']['price']['allGroupsHint'], $backuser, 'HTML');
     step('gettypeextra', $from_id);
 } elseif ($user['step'] == "gettypeextra") {
-    $agentst = ["n", "n2", "f", "all"];
+    $agentst = ["n", "n2", "seller", "f", "all"];
     if (!in_array($text, $agentst)) {
         sendmessage($from_id, $textbotlang['Admin']['agent']['invalidTypeAgent'], $backadmin, 'HTML');
         return;
@@ -6093,7 +6103,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     sendmessage($from_id, $textbotlang['Admin']['price']['selectUserGroup'] . "\n" . $textbotlang['Admin']['price']['allGroupsHint'], $backuser, 'HTML');
     step('gettypeextracustom', $from_id);
 } elseif ($user['step'] == "gettypeextracustom") {
-    $agentst = ["n", "n2", "f", "all"];
+    $agentst = ["n", "n2", "seller", "f", "all"];
     if (!in_array($text, $agentst)) {
         sendmessage($from_id, $textbotlang['Admin']['agent']['invalidTypeAgent'], $backadmin, 'HTML');
         return;
@@ -6126,7 +6136,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     sendmessage($from_id, $textbotlang['Admin']['price']['selectUserGroup'] . "\n" . $textbotlang['Admin']['price']['allGroupsHint'], $backuser, 'HTML');
     step('gettypeextratime', $from_id);
 } elseif ($user['step'] == "gettypeextratime") {
-    $agentst = ["n", "n2", "f", "all"];
+    $agentst = ["n", "n2", "seller", "f", "all"];
     if (!in_array($text, $agentst)) {
         sendmessage($from_id, $textbotlang['Admin']['agent']['invalidTypeAgent'], $backadmin, 'HTML');
         return;
@@ -6159,7 +6169,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     sendmessage($from_id, $textbotlang['Admin']['price']['selectUserGroup'] . "\n" . $textbotlang['Admin']['price']['allGroupsHint'], $backuser, 'HTML');
     step('gettypeextratimecustom', $from_id);
 } elseif ($user['step'] == "gettypeextratimecustom") {
-    $agentst = ["n", "n2", "f", "all"];
+    $agentst = ["n", "n2", "seller", "f", "all"];
     if (!in_array($text, $agentst)) {
         sendmessage($from_id, $textbotlang['Admin']['agent']['invalidTypeAgent'], $backadmin, 'HTML');
         return;
@@ -6563,7 +6573,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     sendmessage($from_id, $textbotlang['Admin']['price']['selectUserGroup'], $backuser, 'HTML');
     step('gettypeextramain', $from_id);
 } elseif ($user['step'] == "gettypeextramain") {
-    $agentst = ["n", "n2", "f"];
+    $agentst = ["n", "n2", "seller", "f"];
     if (!in_array($text, $agentst)) {
         sendmessage($from_id, $textbotlang['Admin']['agent']['invalidTypeAgent'], $backadmin, 'HTML');
         return;
@@ -6590,7 +6600,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     sendmessage($from_id, $textbotlang['Admin']['price']['selectUserGroup'], $backuser, 'HTML');
     step('gettypeextramax', $from_id);
 } elseif ($user['step'] == "gettypeextramax") {
-    $agentst = ["n", "n2", "f"];
+    $agentst = ["n", "n2", "seller", "f"];
     if (!in_array($text, $agentst)) {
         sendmessage($from_id, $textbotlang['Admin']['agent']['invalidTypeAgent'], $backadmin, 'HTML');
         return;
@@ -6617,7 +6627,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     sendmessage($from_id, $textbotlang['Admin']['price']['selectUserGroup'], $backuser, 'HTML');
     step('gettypeextramaintime', $from_id);
 } elseif ($user['step'] == "gettypeextramaintime") {
-    $agentst = ["n", "n2", "f"];
+    $agentst = ["n", "n2", "seller", "f"];
     if (!in_array($text, $agentst)) {
         sendmessage($from_id, $textbotlang['Admin']['agent']['invalidTypeAgent'], $backadmin, 'HTML');
         return;
@@ -6644,7 +6654,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     sendmessage($from_id, $textbotlang['Admin']['price']['selectUserGroup'], $backuser, 'HTML');
     step('gettypeextramaxtime', $from_id);
 } elseif ($user['step'] == "gettypeextramaxtime") {
-    $agentst = ["n", "n2", "f"];
+    $agentst = ["n", "n2", "seller", "f"];
     if (!in_array($text, $agentst)) {
         sendmessage($from_id, $textbotlang['Admin']['agent']['invalidTypeAgent'], $backadmin, 'HTML');
         return;

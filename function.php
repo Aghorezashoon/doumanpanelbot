@@ -626,47 +626,136 @@ function generateUUID()
 }
 function rate_arze($filter = null)
 {
+    $manualDollar = function_exists('getPaySettingValue') ? intval(getPaySettingValue("dollar_price_manual", "0")) : 0;
     $cacheFile = sys_get_temp_dir() . '/douman_rates_cache.json';
     $rates = null;
 
-    if (file_exists($cacheFile) && (time() - filemtime($cacheFile) < 300)) {
-        $rates = json_decode(@file_get_contents($cacheFile), true);
-    }
-
-    if (!is_array($rates) || empty($rates['USD'])) {
-        $ch = curl_init('https://api.nobitex.ir/market/stats?srcCurrency=usdt,trx,ton&dstCurrency=rls');
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 4);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'DoumanBot/2.0');
-        $response = curl_exec($ch);
-        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($code === 200 && $response) {
-            $data = json_decode($response, true);
-            if (isset($data['status']) && $data['status'] === 'ok' && isset($data['stats'])) {
-                $usdtRials = floatval($data['stats']['usdt-rls']['latest'] ?? 0);
-                $trxRials = floatval($data['stats']['trx-rls']['latest'] ?? 0);
-                $tonRials = floatval($data['stats']['ton-rls']['latest'] ?? 0);
-                if ($usdtRials > 0) {
-                    $rates = [
-                        'USD' => round($usdtRials / 10),
-                        'TRX' => round($trxRials / 10),
-                        'Ton' => round($tonRials / 10),
-                    ];
-                    @file_put_contents($cacheFile, json_encode($rates));
-                }
-            }
+    // Cache for 15 minutes (900 seconds)
+    if (file_exists($cacheFile) && (time() - filemtime($cacheFile) < 900)) {
+        $cached = json_decode(@file_get_contents($cacheFile), true);
+        if (is_array($cached) && !empty($cached['USD']) && $cached['USD'] > 10000) {
+            $rates = $cached;
         }
     }
 
-    if (!is_array($rates) || empty($rates['USD'])) {
+    if (!is_array($rates) || empty($rates['USD']) || $rates['USD'] < 10000) {
+        $fetch_json = function($url, $timeout = 2) {
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => $timeout,
+                CURLOPT_CONNECTTIMEOUT => 3,
+                CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => false,
+                CURLOPT_FOLLOWLOCATION => true
+            ]);
+            $res = curl_exec($ch);
+            $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if ($code === 200 && $res) {
+                return json_decode($res, true);
+            }
+            return null;
+        };
+
+        $usd = 0;
+        $trx = 0;
+        $ton = 0;
+
+        // 1. Try Tetherland for USDT price
+        $tl = $fetch_json('https://api.tetherland.com/currencies', 2);
+        if (isset($tl['data']['currencies']['USDT']['price'])) {
+            $p = floatval($tl['data']['currencies']['USDT']['price']);
+            if ($p > 10000) {
+                $usd = round($p);
+            }
+        }
+
+        // 2. Try Wallex for USDT & TRX
+        if ($usd <= 0 || $trx <= 0) {
+            $wx = $fetch_json('https://api.wallex.ir/v1/markets', 2);
+            if (isset($wx['result']['symbols'])) {
+                if ($usd <= 0 && isset($wx['result']['symbols']['USDTTMN']['stats']['lastPrice'])) {
+                    $p = floatval($wx['result']['symbols']['USDTTMN']['stats']['lastPrice']);
+                    if ($p > 10000) $usd = round($p);
+                }
+                if (isset($wx['result']['symbols']['TRXTMN']['stats']['lastPrice'])) {
+                    $p = floatval($wx['result']['symbols']['TRXTMN']['stats']['lastPrice']);
+                    if ($p > 100) $trx = round($p);
+                }
+            }
+        }
+
+        // 3. Try TGJU Official indicator for USD if still missing
+        if ($usd <= 0) {
+            $tgju = $fetch_json('https://api.tgju.org/v1/widget/tmp?keys=price_dollar_rl', 2);
+            if (isset($tgju['response']['indicators'][0]['p'])) {
+                $p = floatval(str_replace(',', '', $tgju['response']['indicators'][0]['p']));
+                if ($p > 100000) {
+                    $usd = round($p / 10);
+                }
+            }
+        }
+
+        // Calculate / fetch TRX and TON against USD
+        if ($usd > 0) {
+            if ($trx <= 0) {
+                $b_trx = $fetch_json('https://api.binance.com/api/v3/ticker/price?symbol=TRXUSDT', 3);
+                if (isset($b_trx['price'])) {
+                    $trx = round($usd * floatval($b_trx['price']));
+                }
+            }
+            if ($ton <= 0) {
+                $b_ton = $fetch_json('https://api.binance.com/api/v3/ticker/price?symbol=TONUSDT', 3);
+                if (isset($b_ton['price'])) {
+                    $ton = round($usd * floatval($b_ton['price']));
+                }
+            }
+
+            if ($trx <= 0 || $ton <= 0) {
+                $cg = $fetch_json('https://api.coingecko.com/api/v3/simple/price?ids=tron,the-open-network&vs_currencies=usd', 3);
+                if ($trx <= 0 && isset($cg['tron']['usd'])) {
+                    $trx = round($usd * floatval($cg['tron']['usd']));
+                }
+                if ($ton <= 0 && isset($cg['the-open-network']['usd'])) {
+                    $ton = round($usd * floatval($cg['the-open-network']['usd']));
+                }
+            }
+
+            if ($trx <= 0) $trx = round($usd * 0.32);
+            if ($ton <= 0) $ton = round($usd * 1.60);
+
+            $rates = [
+                'USD' => $usd,
+                'TRX' => $trx,
+                'Ton' => $ton
+            ];
+            @file_put_contents($cacheFile, json_encode($rates));
+        }
+    }
+
+    if ((!is_array($rates) || empty($rates['USD']) || $rates['USD'] < 10000) && file_exists($cacheFile)) {
+        $stale = json_decode(@file_get_contents($cacheFile), true);
+        if (is_array($stale) && !empty($stale['USD']) && $stale['USD'] > 10000) {
+            $rates = $stale;
+        }
+    }
+
+    if (!is_array($rates) || empty($rates['USD']) || $rates['USD'] < 10000) {
         $rates = [
-            'USD' => 95000,
-            'TRX' => 26000,
-            'Ton' => 450000
+            'USD' => 268000,
+            'TRX' => 86000,
+            'Ton' => 430000
         ];
+    }
+
+    if ($manualDollar > 10000) {
+        $ratioTrx = ($rates['USD'] > 0) ? ($rates['TRX'] / $rates['USD']) : 0.32;
+        $ratioTon = ($rates['USD'] > 0) ? ($rates['Ton'] / $rates['USD']) : 1.60;
+        $rates['USD'] = $manualDollar;
+        $rates['TRX'] = round($manualDollar * $ratioTrx);
+        $rates['Ton'] = round($manualDollar * $ratioTon);
     }
 
     if (is_array($filter)) {
@@ -681,6 +770,7 @@ function rate_arze($filter = null)
 
     return $rates;
 }
+
 function updatePaymentMessageId($response, $orderId)
 {
     if (!is_array($response)) {
@@ -1053,6 +1143,10 @@ function formatBytes($bytes, $precision = 2): string
 }
 function generateUsername($from_id, $Metode, $username, $randomString, $text, $namecustome, $usernamecustom)
 {
+    $text_clean = trim((string) $text);
+    if ($text_clean !== "" && preg_match("/^[a-zA-Z0-9][a-zA-Z0-9_-]{1,31}$/", $text_clean)) {
+        return strtolower($text_clean);
+    }
     $setting = select("setting", "*", null, null, "select");
     $user = select("user", "*", "id", $from_id, "select");
     if ($user == false) {
@@ -1123,9 +1217,8 @@ function deductBalance($user, $amount)
     if ($amount <= 0) {
         return true;
     }
-    $minBalance = $user['agent'] == "n2" ? (intval($user['maxbuyagent']) != 0 ? -intval($user['maxbuyagent']) : null) : 0;
-    $stmt = $pdo->prepare("UPDATE user SET Balance = Balance - ? WHERE id = ? AND (? IS NULL OR Balance - ? >= ?)");
-    $stmt->execute([$amount, $user['id'], $minBalance, $amount, $minBalance]);
+    $stmt = $pdo->prepare("UPDATE user SET Balance = Balance - ? WHERE id = ? AND Balance >= ?");
+    $stmt->execute([$amount, $user['id'], $amount]);
     clearSelectCache('user');
     return $stmt->rowCount() === 1;
 }

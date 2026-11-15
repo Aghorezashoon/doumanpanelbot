@@ -1,6 +1,8 @@
 <?php
 
-require_once __DIR__ . '/../../DoumanCentralClient.php';
+if (file_exists(__DIR__ . '/../../DoumanCentralClient.php')) {
+    require_once __DIR__ . '/../../DoumanCentralClient.php';
+}
 
 class DoumanCentralPanelDriver extends BasePanelDriver
 {

@@ -549,7 +549,7 @@ function usr_set_agent(array $data, string $method): void
     if (!isset($data['chat_id']) || empty($data['chat_id'])) {
         sendJsonResponse(false, "user-id empty", [], 500);
     }
-    if (!isset($data['agent_type']) || !in_array($data['agent_type'], ['f', 'n', 'n2'], true)) {
+    if (!isset($data['agent_type']) || !in_array($data['agent_type'], ['f', 'n', 'n2', 'seller'], true)) {
         sendJsonResponse(false, "agent_type invalid", [], 200);
     }
     update("user", "agent", $data['agent_type'], "id", $data['chat_id']);

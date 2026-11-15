@@ -93,15 +93,15 @@ class SolidLayerPanelDriver extends BasePanelDriver
             $subUrl = "https://{$domainhosts}/sub/" . $invoice['id_invoice'];
         }
 
-        // Determine user status
+        // Determine user status: prioritize expired / limited before disabled
         $status = 'active';
         $now = time();
-        if (empty($user['enabled'])) {
-            $status = 'disabled';
-        } elseif (!empty($user['limit_expire']) && $user['limit_expire'] > 0 && $now > $user['limit_expire']) {
+        if (!empty($user['limit_expire']) && $user['limit_expire'] > 0 && $now > $user['limit_expire']) {
             $status = 'expired';
         } elseif (!empty($user['limit_usage']) && $user['limit_usage'] > 0 && ($user['total_usage'] ?? 0) >= $user['limit_usage']) {
             $status = 'limited';
+        } elseif (empty($user['enabled'])) {
+            $status = 'disabled';
         }
 
         // Fetch links

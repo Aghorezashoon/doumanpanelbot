@@ -31,4 +31,6 @@ return [
     'category',
     'reagent_report',
     'reseller_provider',
+    'support_messages',
+    'web_login_codes',
 ];
